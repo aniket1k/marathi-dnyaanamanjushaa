@@ -66,6 +66,23 @@
       font-weight: 600;
     }
 
+    /* TIMER */
+
+    .timer-badge {
+      min-width: 75px;
+      text-align: center;
+    }
+
+    .timer-warning {
+      background: #fff7ed;
+      color: #c2410c;
+    }
+
+    .timer-expired {
+      background: #fef2f2;
+      color: #b91c1c;
+    }
+
     .progress {
       height: 9px;
       background: #e5e7eb;
@@ -257,7 +274,9 @@
   <div class="card">
 
     <!-- START SCREEN -->
+
     <div id="startScreen" class="start-screen">
+
       <h2>क्विझसाठी तयार आहात?</h2>
 
       <p>
@@ -266,7 +285,13 @@
       </p>
 
       <p>
-        स्तर: <strong>Intermediate → Difficult</strong>
+        स्तर:
+        <strong>Intermediate → Difficult</strong>
+      </p>
+
+      <p>
+        प्रत्येक प्रश्नासाठी वेळ:
+        <strong>30 सेकंद</strong>
       </p>
 
       <button
@@ -275,55 +300,120 @@
       >
         क्विझ सुरू करा
       </button>
+
     </div>
+
 
     <!-- LOADING -->
+
     <div id="loading" class="loading hidden">
+
       <h3>प्रश्नसंच लोड होत आहे...</h3>
-      <p>कृपया थोडा वेळ थांबा.</p>
+
+      <p>
+        कृपया थोडा वेळ थांबा.
+      </p>
+
     </div>
 
+
     <!-- ERROR -->
+
     <div id="errorBox" class="error hidden"></div>
 
+
     <!-- QUIZ -->
+
     <div id="quizScreen" class="hidden">
 
       <div class="topbar">
-        <span id="questionCounter" class="badge"></span>
-        <span id="categoryBadge" class="badge"></span>
-        <span id="difficultyBadge" class="badge"></span>
+
+        <span
+          id="questionCounter"
+          class="badge"
+        ></span>
+
+        <span
+          id="categoryBadge"
+          class="badge"
+        ></span>
+
+        <span
+          id="difficultyBadge"
+          class="badge"
+        ></span>
+
+        <span
+          id="timerBadge"
+          class="badge timer-badge"
+        >
+          ⏱️ 30
+        </span>
+
       </div>
+
 
       <div class="progress">
-        <div id="progressBar" class="progress-bar"></div>
+
+        <div
+          id="progressBar"
+          class="progress-bar"
+        ></div>
+
       </div>
 
-      <div id="questionNumber" class="question-number"></div>
 
-      <div id="questionText" class="question"></div>
+      <div
+        id="questionNumber"
+        class="question-number"
+      ></div>
 
-      <div id="options" class="options"></div>
 
-      <div id="explanation" class="explanation"></div>
+      <div
+        id="questionText"
+        class="question"
+      ></div>
+
+
+      <div
+        id="options"
+        class="options"
+      ></div>
+
+
+      <div
+        id="explanation"
+        class="explanation"
+      ></div>
+
 
       <div class="controls">
+
         <button
           id="nextButton"
           class="main-button next-button"
         >
           पुढील प्रश्न →
         </button>
+
       </div>
 
     </div>
 
+
     <!-- RESULT -->
-    <div id="resultScreen" class="result-screen hidden">
+
+    <div
+      id="resultScreen"
+      class="result-screen hidden"
+    >
 
       <h2>🎉 क्विझ पूर्ण!</h2>
 
-      <div id="scoreText" class="score"></div>
+      <div
+        id="scoreText"
+        class="score"
+      ></div>
 
       <p id="resultMessage"></p>
 
@@ -360,15 +450,24 @@
 
   const QUESTIONS_PER_QUIZ = 16;
 
+  const QUESTION_TIME_SECONDS = 30;
+
 
   // =========================================================
   // STATE
   // =========================================================
 
   let questions = [];
+
   let currentQuestionIndex = 0;
+
   let score = 0;
+
   let answered = false;
+
+  let timerInterval = null;
+
+  let timeRemaining = QUESTION_TIME_SECONDS;
 
 
   // =========================================================
@@ -398,6 +497,9 @@
 
   const difficultyBadge =
     document.getElementById("difficultyBadge");
+
+  const timerBadge =
+    document.getElementById("timerBadge");
 
   const progressBar =
     document.getElementById("progressBar");
@@ -431,9 +533,13 @@
   function hideAllScreens() {
 
     startScreen.classList.add("hidden");
+
     loading.classList.add("hidden");
+
     errorBox.classList.add("hidden");
+
     quizScreen.classList.add("hidden");
+
     resultScreen.classList.add("hidden");
 
   }
@@ -451,6 +557,241 @@
 
 
   // =========================================================
+  // TIMER
+  // =========================================================
+
+  function stopTimer() {
+
+    if (timerInterval !== null) {
+
+      clearInterval(timerInterval);
+
+      timerInterval = null;
+
+    }
+
+  }
+
+
+  function resetTimerDisplay() {
+
+    timeRemaining =
+      QUESTION_TIME_SECONDS;
+
+    timerBadge.textContent =
+      `⏱️ ${timeRemaining}`;
+
+    timerBadge.classList.remove(
+      "timer-warning",
+      "timer-expired"
+    );
+
+  }
+
+
+  function startTimer() {
+
+    stopTimer();
+
+    resetTimerDisplay();
+
+    timerInterval =
+      setInterval(() => {
+
+        if (answered) {
+
+          stopTimer();
+
+          return;
+
+        }
+
+        timeRemaining--;
+
+        timerBadge.textContent =
+          `⏱️ ${timeRemaining}`;
+
+
+        if (timeRemaining <= 10) {
+
+          timerBadge.classList.add(
+            "timer-warning"
+          );
+
+        }
+
+
+        if (timeRemaining <= 0) {
+
+          stopTimer();
+
+          timerBadge.textContent =
+            "⏱️ 0";
+
+          timerBadge.classList.remove(
+            "timer-warning"
+          );
+
+          timerBadge.classList.add(
+            "timer-expired"
+          );
+
+          timeExpired();
+
+        }
+
+      }, 1000);
+
+  }
+
+
+  // =========================================================
+  // TIME EXPIRED
+  // =========================================================
+
+  function timeExpired() {
+
+    if (answered) {
+
+      return;
+
+    }
+
+
+    answered = true;
+
+
+    const q =
+      questions[currentQuestionIndex];
+
+
+    const correctOriginalIndex =
+      Number(q.correct_answer);
+
+
+    const optionButtons =
+      document.querySelectorAll(".option");
+
+
+    // No answer = no point.
+
+    // Disable every option.
+
+    optionButtons.forEach(
+      button => {
+
+        button.disabled = true;
+
+      }
+    );
+
+
+    // Find correct answer.
+
+    const correctText = [
+
+      q.option_a,
+
+      q.option_b,
+
+      q.option_c,
+
+      q.option_d
+
+    ][correctOriginalIndex];
+
+
+    // Highlight correct option.
+
+    optionButtons.forEach(
+      button => {
+
+        const optionText =
+          button.textContent
+            .replace(
+              /^[A-D]\.\s*/,
+              ""
+            );
+
+
+        if (
+          optionText ===
+          correctText
+        ) {
+
+          button.classList.add(
+            "correct"
+          );
+
+        }
+
+      }
+    );
+
+
+    // Show explanation.
+
+    explanation.innerHTML =
+
+      `<strong>⏰ वेळ संपली!</strong>
+
+       <div style="margin-top:8px;">
+         योग्य उत्तर:
+         <strong>
+           ${escapeHtml(correctText)}
+         </strong>
+       </div>
+
+       <div style="margin-top:12px;">
+         <strong>स्पष्टीकरण:</strong>
+         ${escapeHtml(q.explanation || "")}
+       </div>
+
+       <div class="source">
+         <strong>स्रोत:</strong>
+
+         <a
+           href="${safeUrl(q.source)}"
+           target="_blank"
+           rel="noopener noreferrer"
+         >
+           अधिकृत स्रोत पहा
+         </a>
+       </div>`;
+
+
+    explanation.style.display =
+      "block";
+
+
+    // IMPORTANT:
+    // Do NOT automatically move forward.
+
+    nextButton.style.display =
+      "block";
+
+
+    if (
+      currentQuestionIndex ===
+      questions.length - 1
+    ) {
+
+      nextButton.textContent =
+        "निकाल पहा →";
+
+    }
+
+    else {
+
+      nextButton.textContent =
+        "पुढील प्रश्न →";
+
+    }
+
+  }
+
+
+  // =========================================================
   // FETCH QUESTIONS FROM SUPABASE
   // =========================================================
 
@@ -462,20 +803,26 @@
       "?select=id,question,option_a,option_b,option_c,option_d,correct_answer,category,difficulty,explanation,source,source_date";
 
 
-    const response = await fetch(url, {
+    const response =
+      await fetch(
+        url,
+        {
 
-      method: "GET",
+          method: "GET",
 
-      headers: {
+          headers: {
 
-        "apikey": SUPABASE_KEY,
+            "apikey":
+              SUPABASE_KEY,
 
-        "Authorization":
-          "Bearer " + SUPABASE_KEY
+            "Authorization":
+              "Bearer " +
+              SUPABASE_KEY
 
-      }
+          }
 
-    });
+        }
+      );
 
 
     if (!response.ok) {
@@ -511,6 +858,7 @@
     const result =
       [...array];
 
+
     for (
       let i = result.length - 1;
       i > 0;
@@ -519,8 +867,10 @@
 
       const j =
         Math.floor(
-          Math.random() * (i + 1)
+          Math.random() *
+          (i + 1)
         );
+
 
       [
         result[i],
@@ -531,6 +881,7 @@
       ];
 
     }
+
 
     return result;
 
@@ -543,21 +894,26 @@
 
   function prepareQuestions(data) {
 
-    // Remove obviously invalid records.
     const valid =
       data.filter(q => {
 
         return (
 
           q.question &&
+
           q.option_a &&
+
           q.option_b &&
+
           q.option_c &&
+
           q.option_d &&
 
           [0, 1, 2, 3]
             .includes(
-              Number(q.correct_answer)
+              Number(
+                q.correct_answer
+              )
             )
 
         );
@@ -565,12 +921,10 @@
       });
 
 
-    // Randomize question order.
     const randomized =
       shuffle(valid);
 
 
-    // Take maximum 16.
     return randomized.slice(
       0,
       Math.min(
@@ -588,9 +942,14 @@
 
   async function startQuiz() {
 
+    stopTimer();
+
     hideAllScreens();
 
-    loading.classList.remove("hidden");
+    loading.classList.remove(
+      "hidden"
+    );
+
 
     try {
 
@@ -602,7 +961,9 @@
         prepareQuestions(data);
 
 
-      if (questions.length === 0) {
+      if (
+        questions.length === 0
+      ) {
 
         throw new Error(
           "Supabase मध्ये वैध प्रश्न उपलब्ध नाहीत."
@@ -612,11 +973,20 @@
 
 
       currentQuestionIndex = 0;
+
       score = 0;
 
-      loading.classList.add("hidden");
+      answered = false;
 
-      quizScreen.classList.remove("hidden");
+
+      loading.classList.add(
+        "hidden"
+      );
+
+      quizScreen.classList.remove(
+        "hidden"
+      );
+
 
       showQuestion();
 
@@ -625,6 +995,7 @@
     catch (error) {
 
       console.error(error);
+
 
       showError(
         "प्रश्न लोड करता आले नाहीत.\n\n" +
@@ -642,10 +1013,15 @@
 
   function showQuestion() {
 
+    stopTimer();
+
     answered = false;
 
+
     const q =
-      questions[currentQuestionIndex];
+      questions[
+        currentQuestionIndex
+      ];
 
 
     const total =
@@ -653,19 +1029,25 @@
 
 
     questionCounter.textContent =
-      `प्रश्न ${currentQuestionIndex + 1} / ${total}`;
+      `प्रश्न ${
+        currentQuestionIndex + 1
+      } / ${total}`;
 
 
     categoryBadge.textContent =
-      q.category || "सामान्यज्ञान";
+      q.category ||
+      "सामान्यज्ञान";
 
 
     difficultyBadge.textContent =
-      q.difficulty || "";
+      q.difficulty ||
+      "";
 
 
     questionNumber.textContent =
-      `प्रश्न ${currentQuestionIndex + 1}`;
+      `प्रश्न ${
+        currentQuestionIndex + 1
+      }`;
 
 
     questionText.textContent =
@@ -674,27 +1056,37 @@
 
     progressBar.style.width =
       (
-        ((currentQuestionIndex + 1) /
-        total) * 100
+        (
+          (
+            currentQuestionIndex + 1
+          ) /
+          total
+        ) *
+        100
       ) + "%";
 
 
-    // ---------------------------------------------------------
+    // =======================================================
     // OPTIONS
-    // ---------------------------------------------------------
+    // =======================================================
 
     const originalOptions = [
 
       q.option_a,
+
       q.option_b,
+
       q.option_c,
+
       q.option_d
 
     ];
 
 
     const correctOriginalIndex =
-      Number(q.correct_answer);
+      Number(
+        q.correct_answer
+      );
 
 
     const optionObjects =
@@ -703,7 +1095,8 @@
 
           text: text,
 
-          originalIndex: index
+          originalIndex:
+            index
 
         })
       );
@@ -718,10 +1111,15 @@
 
 
     randomizedOptions.forEach(
-      (optionObject, displayIndex) => {
+      (
+        optionObject,
+        displayIndex
+      ) => {
 
         const button =
-          document.createElement("button");
+          document.createElement(
+            "button"
+          );
 
 
         button.className =
@@ -729,7 +1127,9 @@
 
 
         button.textContent =
-          `${String.fromCharCode(65 + displayIndex)}. ` +
+          `${String.fromCharCode(
+            65 + displayIndex
+          )}. ` +
           optionObject.text;
 
 
@@ -739,9 +1139,14 @@
 
             answerQuestion(
               button,
-              optionObject.originalIndex,
+
+              optionObject
+                .originalIndex,
+
               correctOriginalIndex,
+
               q
+
             );
 
           }
@@ -759,6 +1164,7 @@
     explanation.style.display =
       "none";
 
+
     explanation.innerHTML =
       "";
 
@@ -766,11 +1172,20 @@
     nextButton.style.display =
       "none";
 
+
+    nextButton.textContent =
+      "पुढील प्रश्न →";
+
+
+    // Start fresh 30-second timer.
+
+    startTimer();
+
   }
 
 
   // =========================================================
-  // ANSWER
+  // ANSWER QUESTION
   // =========================================================
 
   function answerQuestion(
@@ -781,10 +1196,28 @@
   ) {
 
     if (answered) {
+
       return;
+
     }
 
+
     answered = true;
+
+
+    // Stop timer immediately.
+
+    stopTimer();
+
+
+    timerBadge.textContent =
+      `⏱️ ${timeRemaining}`;
+
+
+    timerBadge.classList.remove(
+      "timer-warning",
+      "timer-expired"
+    );
 
 
     const optionButtons =
@@ -796,8 +1229,7 @@
     optionButtons.forEach(
       button => {
 
-        button.disabled =
-          true;
+        button.disabled = true;
 
       }
     );
@@ -812,6 +1244,7 @@
         "correct"
       );
 
+
       score++;
 
     }
@@ -823,7 +1256,19 @@
       );
 
 
-      // Find and mark correct option.
+      const correctText = [
+
+        q.option_a,
+
+        q.option_b,
+
+        q.option_c,
+
+        q.option_d
+
+      ][correctOriginalIndex];
+
+
       optionButtons.forEach(
         button => {
 
@@ -833,15 +1278,6 @@
                 /^[A-D]\.\s*/,
                 ""
               );
-
-
-          const correctText =
-            [
-              q.option_a,
-              q.option_b,
-              q.option_c,
-              q.option_d
-            ][correctOriginalIndex];
 
 
           if (
@@ -861,28 +1297,31 @@
     }
 
 
-    // ---------------------------------------------------------
+    // =======================================================
     // EXPLANATION
-    // ---------------------------------------------------------
+    // =======================================================
 
     explanation.innerHTML =
 
-      `<strong>स्पष्टीकरण:</strong> ` +
+      `<strong>स्पष्टीकरण:</strong>
 
-      escapeHtml(
-        q.explanation || ""
-      ) +
+       ${escapeHtml(
+         q.explanation || ""
+       )}
 
-      `<div class="source">
-        <strong>स्रोत:</strong>
-        <a
-          href="${safeUrl(q.source)}"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          अधिकृत स्रोत पहा
-        </a>
-      </div>`;
+       <div class="source">
+
+         <strong>स्रोत:</strong>
+
+         <a
+           href="${safeUrl(q.source)}"
+           target="_blank"
+           rel="noopener noreferrer"
+         >
+           अधिकृत स्रोत पहा
+         </a>
+
+       </div>`;
 
 
     explanation.style.display =
@@ -920,11 +1359,31 @@
   function escapeHtml(value) {
 
     return String(value)
-      .replaceAll("&", "&amp;")
-      .replaceAll("<", "&lt;")
-      .replaceAll(">", "&gt;")
-      .replaceAll('"', "&quot;")
-      .replaceAll("'", "&#039;");
+
+      .replaceAll(
+        "&",
+        "&amp;"
+      )
+
+      .replaceAll(
+        "<",
+        "&lt;"
+      )
+
+      .replaceAll(
+        ">",
+        "&gt;"
+      )
+
+      .replaceAll(
+        '"',
+        "&quot;"
+      )
+
+      .replaceAll(
+        "'",
+        "&#039;"
+      );
 
   }
 
@@ -972,8 +1431,13 @@
     () => {
 
       if (!answered) {
+
         return;
+
       }
+
+
+      stopTimer();
 
 
       currentQuestionIndex++;
@@ -1003,6 +1467,8 @@
 
   function showResult() {
 
+    stopTimer();
+
     hideAllScreens();
 
     resultScreen.classList.remove(
@@ -1020,18 +1486,26 @@
 
     const percentage =
       Math.round(
-        (score / total) * 100
+        (
+          score /
+          total
+        ) *
+        100
       );
 
 
-    if (percentage >= 80) {
+    if (
+      percentage >= 80
+    ) {
 
       resultMessage.textContent =
         "उत्कृष्ट! तुमचे सामान्यज्ञान खूप चांगले आहे. 🏆";
 
     }
 
-    else if (percentage >= 60) {
+    else if (
+      percentage >= 60
+    ) {
 
       resultMessage.textContent =
         "छान! आणखी थोडा सराव केला तर तुम्ही आणखी चांगली कामगिरी करू शकता.";

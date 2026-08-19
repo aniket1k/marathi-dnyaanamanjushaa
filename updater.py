@@ -1,82 +1,42 @@
 import os
 import json
+import re
 from datetime import datetime, timezone
 from urllib.parse import urlparse
 
 import requests
-import feedparser
 from google import genai
-from google.genai import types
 
 
 # ============================================================
-# CONFIG
+# CONFIGURATION
 # ============================================================
 
 GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_SECRET_KEY = os.environ["SUPABASE_SECRET_KEY"]
 
-QUESTIONS_PER_RUN = 16
-
 MODEL = "gemini-3.6-flash"
 
-HEADERS = {
-    "User-Agent": "MarathiQuizUpdater/2.0"
-}
+QUESTIONS_PER_RUN = 16
+
+# Generate extra candidates so that failed validation
+# does not force us to accept bad questions.
+CANDIDATES_PER_RUN = 24
 
 
 # ============================================================
-# APPROVED SOURCES
+# CLIENTS
 # ============================================================
-#
-# Wikipedia is intentionally NOT included anywhere.
-#
-# We begin with official/authoritative sources.
-# More sources can be added after testing.
-#
 
-PIB_FEED = (
-    "https://pib.gov.in/RssMain.aspx"
-    "?ModId=6&Lang=1&Regid=3"
+client = genai.Client(
+    api_key=GEMINI_API_KEY
 )
 
-APPROVED_DOMAINS = {
-    "pib.gov.in",
-    "gov.in",
-    "nic.in",
-    "isro.gov.in",
-    "rbi.org.in",
-    "eci.gov.in",
-    "sansad.in",
-    "indiacode.nic.in",
-    "maharashtra.gov.in",
-    "mahakosh.gov.in",
-    "mpsc.gov.in",
-    "asi.nic.in",
-    "unesco.org",
-    "un.org",
-    "who.int",
-    "nasa.gov",
-    "nobelprize.org",
-    "icc-cricket.com",
-    "olympics.com",
-    "fifa.com",
-}
-
-
-# ============================================================
-# GEMINI
-# ============================================================
-
-client = genai.Client(api_key=GEMINI_API_KEY)
-
-
-# ============================================================
-# SUPABASE
-# ============================================================
-
-REST_URL = f"{SUPABASE_URL.rstrip('/')}/rest/v1/questions"
+REST_URL = (
+    f"{SUPABASE_URL.rstrip('/')}"
+    "/rest/v1/questions"
+)
 
 SUPABASE_HEADERS = {
     "apikey": SUPABASE_SECRET_KEY,
@@ -87,65 +47,86 @@ SUPABASE_HEADERS = {
 
 
 # ============================================================
-# FETCH PIB
+# APPROVED SOURCE POLICY
 # ============================================================
 
-def fetch_pib_articles():
+# Wikipedia is intentionally absent.
 
-    feed = feedparser.parse(PIB_FEED)
+APPROVED_DOMAINS = {
+    # Indian government / institutions
+    "gov.in",
+    "nic.in",
+    "pib.gov.in",
+    "india.gov.in",
+    "indiacode.nic.in",
+    "sansad.in",
+    "rbi.org.in",
+    "eci.gov.in",
+    "isro.gov.in",
+    "asi.nic.in",
+    "culture.gov.in",
+    "indiaculture.gov.in",
 
-    articles = []
+    # Maharashtra
+    "maharashtra.gov.in",
+    "maharashtratourism.gov.in",
+    "mtdc.co",
 
-    for item in feed.entries[:30]:
+    # International institutions
+    "un.org",
+    "unesco.org",
+    "who.int",
+    "worldbank.org",
+    "imf.org",
+    "nasa.gov",
+    "nobelprize.org",
 
-        title = item.get("title", "").strip()
-        summary = item.get("summary", "").strip()
-        link = item.get("link", "").strip()
+    # Sports organizations
+    "icc-cricket.com",
+    "olympics.com",
+    "fifa.com",
+    "uefa.com",
+    "worldathletics.org",
+    "formula1.com",
 
-        if not title or not link:
-            continue
-
-        articles.append({
-            "title": title,
-            "summary": summary,
-            "link": link
-        })
-
-    return articles
-
-
-# ============================================================
-# EXISTING QUESTIONS
-# ============================================================
-
-def get_existing_questions():
-
-    params = {
-        "select": "question",
-        "limit": "10000"
-    }
-
-    response = requests.get(
-        REST_URL,
-        headers=SUPABASE_HEADERS,
-        params=params,
-        timeout=30
-    )
-
-    response.raise_for_status()
-
-    return {
-        row["question"].strip().lower()
-        for row in response.json()
-        if row.get("question")
-    }
+    # High-quality reference / news
+    "britannica.com",
+    "reuters.com",
+    "apnews.com"
+}
 
 
 # ============================================================
-# URL CHECK
+# CATEGORY ROTATION
 # ============================================================
 
-def is_approved_source(url):
+CATEGORIES = [
+    "Current Affairs",
+    "Maratha History",
+    "Maharashtra History",
+    "Indian History",
+    "World History",
+    "Indian Polity",
+    "Geography",
+    "Science",
+    "Space & Technology",
+    "Environment",
+    "Economy",
+    "Sports",
+    "Maharashtra Culture",
+    "Marathi Literature",
+    "Indian Culture",
+    "Awards",
+    "International Affairs",
+    "General Knowledge"
+]
+
+
+# ============================================================
+# SOURCE CHECKING
+# ============================================================
+
+def hostname_is_approved(url):
 
     try:
         parsed = urlparse(url)
@@ -174,352 +155,864 @@ def is_approved_source(url):
         return False
 
 
+def is_wikipedia(url):
+
+    try:
+        hostname = (urlparse(url).hostname or "").lower()
+
+        return (
+            hostname == "wikipedia.org"
+            or hostname.endswith(".wikipedia.org")
+            or hostname == "wikimedia.org"
+            or hostname.endswith(".wikimedia.org")
+        )
+
+    except Exception:
+        return False
+
+
 # ============================================================
-# GENERATE QUESTIONS
+# EXISTING QUESTIONS
 # ============================================================
 
-def generate_questions(articles):
+def get_existing_questions():
 
-    today = datetime.now(timezone.utc).date().isoformat()
+    params = {
+        "select": "question",
+        "limit": "10000"
+    }
 
-    source_text = json.dumps(
-        articles,
-        ensure_ascii=False,
-        indent=2
+    response = requests.get(
+        REST_URL,
+        headers=SUPABASE_HEADERS,
+        params=params,
+        timeout=30
+    )
+
+    response.raise_for_status()
+
+    rows = response.json()
+
+    return {
+        normalize_text(row["question"])
+        for row in rows
+        if row.get("question")
+    }
+
+
+def normalize_text(text):
+
+    text = str(text).strip().lower()
+
+    text = re.sub(
+        r"\s+",
+        " ",
+        text
+    )
+
+    return text
+
+
+# ============================================================
+# CATEGORY PLAN
+# ============================================================
+
+def build_category_plan():
+
+    """
+    Rotate categories using the calendar day.
+
+    Current Affairs always gets priority.
+    Maharashtra / Maratha topics receive regular coverage.
+    Other categories rotate so the pool stays broad.
+    """
+
+    day_number = datetime.now(
+        timezone.utc
+    ).timetuple().tm_yday
+
+    rotating = CATEGORIES[1:]
+
+    offset = day_number % len(rotating)
+
+    rotated = (
+        rotating[offset:]
+        + rotating[:offset]
+    )
+
+    plan = [
+        "Current Affairs",
+        "Current Affairs",
+
+        rotated[0],
+        rotated[1],
+        rotated[2],
+        rotated[3],
+        rotated[4],
+        rotated[5],
+        rotated[6],
+        rotated[7],
+        rotated[8],
+        rotated[9],
+        rotated[10],
+        rotated[11],
+        rotated[12],
+        rotated[13]
+    ]
+
+    return plan
+
+
+# ============================================================
+# RESEARCH WITH GOOGLE SEARCH
+# ============================================================
+
+def research_facts():
+
+    today = datetime.now(
+        timezone.utc
+    ).date().isoformat()
+
+    category_plan = build_category_plan()
+
+    plan_text = "\n".join(
+        f"{i + 1}. {category}"
+        for i, category in enumerate(category_plan)
     )
 
     prompt = f"""
-तुम्ही अत्यंत कठोर fact-checking करणारे
-मराठी quiz editor आहात.
+You are the research stage of a high-accuracy Marathi
+quiz system.
 
-हे KBC/KHK शैलीचे सामान्यज्ञान quiz आहे.
-
-महत्त्वाचे:
-Wikipedia चा कोणत्याही कारणासाठी वापर करू नका.
-
-आजची तारीख:
+Today:
 {today}
 
-आम्हाला एकूण {QUESTIONS_PER_RUN} उच्च-गुणवत्तेचे प्रश्न हवेत.
+We need factual research for 16 quiz questions.
 
-स्तर:
-Intermediate ते Difficult.
+The final questions will be:
+- Marathi
+- Intermediate to Difficult
+- 4 answer choices
+- exactly 1 correct answer
+- factually verifiable
 
-भाषा:
-नैसर्गिक, स्पष्ट आणि शुद्ध मराठी.
+IMPORTANT SOURCE POLICY:
 
-प्रत्येक प्रश्नासाठी:
+Wikipedia is STRICTLY FORBIDDEN.
 
-- प्रश्न मराठीत
-- नेमके 4 पर्याय
-- फक्त 1 बरोबर उत्तर
-- correct_answer = 0, 1, 2 किंवा 3
-- category
-- difficulty
-- मराठीत explanation
-- source URL
-- source date
+Do not use:
+- Wikipedia
+- Wikidata
+- random quiz websites
+- GK blogs
+- anonymous blogs
+- social media
+- unsourced pages
+- AI-generated websites
 
-============================================================
-ACCURACY RULES
-============================================================
+Prefer:
+1. Official government sources
+2. Official institutional sources
+3. Primary organizations
+4. Reputable reference sources
+5. Reuters/AP where appropriate for current affairs
 
-1. कोणतेही तथ्य स्वतःहून बनवू नका.
+The source must actually support the fact.
 
-2. उत्तराला विश्वसनीय स्रोतामध्ये स्पष्ट आधार असणे आवश्यक आहे.
+Do not rely on your memory for a factual claim
+when a reliable web source can verify it.
 
-3. स्रोत उपलब्ध नसेल किंवा तथ्य अस्पष्ट असेल तर प्रश्न देऊ नका.
+CATEGORY PLAN:
 
-4. दोन पर्याय काही अर्थाने बरोबर असतील असा प्रश्न देऊ नका.
+{plan_text}
 
-5. प्रश्नातील प्रत्येक महत्त्वाचा दावा source मध्ये समर्थित असावा.
+For each category, research a strong, non-trivial fact
+suitable for an Intermediate/Difficult quiz question.
 
-6. चार पर्याय एकमेकांपासून स्पष्टपणे वेगळे असावेत.
+Avoid:
+- trivial facts
+- ambiguous facts
+- disputed claims
+- facts with multiple possible answers
+- questions whose answer depends on interpretation
+- obsolete current-affairs information
 
-7. फक्त एकच पर्याय योग्य असावा.
+For historical questions, prefer authoritative
+institutional or reference sources.
 
-8. चुकीचे distractors देखील तथ्यात्मकदृष्ट्या
-   अशा प्रकारे लिहा की ते प्रश्नाचे उत्तर ठरू नयेत.
+For current affairs, prefer recent information.
 
-9. अतिशय सोपे प्रश्न टाळा.
+Return a research dossier.
 
-10. अस्पष्ट, विवादित किंवा संदिग्ध तथ्यांवर प्रश्न बनवू नका.
+For each item provide:
 
-11. source URL काल्पनिक बनवू नका.
+CATEGORY:
+FACT:
+WHY_IT_IS_UNAMBIGUOUS:
+SOURCE_TITLE:
+SOURCE_URL:
 
-12. दिलेल्या source material बाहेरील तथ्य वापरायचे असल्यास
-    Google Search grounding वापरा.
+Do not invent URLs.
+Use only URLs actually returned by Google Search.
 
-13. Wikipedia वापरू नका.
-
-14. फक्त विश्वासार्ह / अधिकृत / प्राथमिक स्रोतांना प्राधान्य द्या.
-
-============================================================
-CATEGORY MIX
-============================================================
-
-प्रश्नांमध्ये शक्य तितका विविध category mix ठेवा:
-
-- Current Affairs
-- Maratha History
-- Maharashtra History
-- Indian History
-- World History
-- Indian Polity
-- Geography
-- Science
-- Space & Technology
-- Environment
-- Economy
-- Sports
-- Maharashtra Culture
-- Marathi Literature
-- Indian Culture
-- Awards
-- International Affairs
-- General Knowledge
-
-Current Affairs साठी ताजी माहिती वापरा.
-
-Maratha History आणि historical categories साठी
-विश्वसनीय अधिकृत/संस्थात्मक स्रोत वापरा.
-
-एकाच विषयावर अनेक प्रश्न देणे टाळा.
-
-============================================================
-MARATHI QUALITY
-============================================================
-
-प्रश्न नैसर्गिक मराठीत लिहा.
-
-अर्थ बदलणारे machine-like translation टाळा.
-
-ऐतिहासिक व्यक्ती, ठिकाणे, संस्था आणि तांत्रिक संज्ञांची
-प्रचलित मराठी नावे वापरा.
-
-============================================================
-IMPORTANT
-============================================================
-
-जर 16 उच्च-गुणवत्तेचे आणि पूर्णपणे समर्थित प्रश्न
-तयार होत नसतील, तर चुकीचे प्रश्न तयार करून संख्या पूर्ण करू नका.
-
-कमी प्रश्न देणे हे चुकीची माहिती देण्यापेक्षा चांगले आहे.
-
-SOURCE MATERIAL:
-
-{source_text}
+The final question writer will receive your research dossier
+and will NOT be allowed to introduce facts that are not
+supported by this dossier.
 """
 
-    grounding_tool = types.Tool(
-        google_search=types.GoogleSearch()
+    interaction = client.interactions.create(
+        model=MODEL,
+        input=prompt,
+        tools=[
+            {
+                "type": "google_search"
+            }
+        ]
     )
+
+    return interaction
+
+
+# ============================================================
+# EXTRACT SEARCH CITATIONS
+# ============================================================
+
+def extract_citations(interaction):
+
+    citations = []
+
+    for step in getattr(
+        interaction,
+        "steps",
+        []
+    ):
+
+        if getattr(
+            step,
+            "type",
+            None
+        ) != "model_output":
+            continue
+
+        for block in getattr(
+            step,
+            "content",
+            []
+        ):
+
+            if getattr(
+                block,
+                "type",
+                None
+            ) != "text":
+                continue
+
+            text = getattr(
+                block,
+                "text",
+                ""
+            )
+
+            annotations = getattr(
+                block,
+                "annotations",
+                None
+            ) or []
+
+            for annotation in annotations:
+
+                if getattr(
+                    annotation,
+                    "type",
+                    None
+                ) != "url_citation":
+                    continue
+
+                url = getattr(
+                    annotation,
+                    "url",
+                    ""
+                )
+
+                title = getattr(
+                    annotation,
+                    "title",
+                    ""
+                )
+
+                start = getattr(
+                    annotation,
+                    "start_index",
+                    0
+                )
+
+                end = getattr(
+                    annotation,
+                    "end_index",
+                    0
+                )
+
+                cited_text = text[
+                    start:end
+                ]
+
+                if not url:
+                    continue
+
+                if is_wikipedia(url):
+                    continue
+
+                if not hostname_is_approved(url):
+                    continue
+
+                citations.append({
+                    "url": url,
+                    "title": title,
+                    "evidence": cited_text
+                })
+
+    # Remove duplicates
+    unique = {}
+
+    for item in citations:
+
+        unique[item["url"]] = item
+
+    return list(
+        unique.values()
+    )
+
+
+# ============================================================
+# CREATE EVIDENCE PACKET
+# ============================================================
+
+def build_evidence_packet(
+    interaction,
+    citations
+):
+
+    research_text = getattr(
+        interaction,
+        "output_text",
+        ""
+    )
+
+    lines = []
+
+    lines.append(
+        "RESEARCH DOSSIER"
+    )
+
+    lines.append(
+        research_text
+    )
+
+    lines.append(
+        "\nVERIFIED SEARCH CITATIONS"
+    )
+
+    for i, citation in enumerate(
+        citations
+    ):
+
+        lines.append(
+            f"""
+[EVIDENCE {i}]
+TITLE: {citation["title"]}
+URL: {citation["url"]}
+CITED EVIDENCE:
+{citation["evidence"]}
+"""
+        )
+
+    return "\n".join(lines)
+
+
+# ============================================================
+# QUESTION GENERATION
+# ============================================================
+
+def generate_questions(
+    evidence_packet
+):
+
+    today = datetime.now(
+        timezone.utc
+    ).date().isoformat()
+
+    schema = {
+        "type": "OBJECT",
+        "properties": {
+            "questions": {
+                "type": "ARRAY",
+                "items": {
+                    "type": "OBJECT",
+                    "properties": {
+                        "question": {
+                            "type": "STRING"
+                        },
+                        "option_a": {
+                            "type": "STRING"
+                        },
+                        "option_b": {
+                            "type": "STRING"
+                        },
+                        "option_c": {
+                            "type": "STRING"
+                        },
+                        "option_d": {
+                            "type": "STRING"
+                        },
+                        "correct_answer": {
+                            "type": "INTEGER"
+                        },
+                        "category": {
+                            "type": "STRING"
+                        },
+                        "difficulty": {
+                            "type": "STRING"
+                        },
+                        "explanation": {
+                            "type": "STRING"
+                        },
+                        "source": {
+                            "type": "STRING"
+                        },
+                        "evidence_number": {
+                            "type": "INTEGER"
+                        }
+                    },
+                    "required": [
+                        "question",
+                        "option_a",
+                        "option_b",
+                        "option_c",
+                        "option_d",
+                        "correct_answer",
+                        "category",
+                        "difficulty",
+                        "explanation",
+                        "source",
+                        "evidence_number"
+                    ]
+                }
+            }
+        },
+        "required": [
+            "questions"
+        ]
+    }
+
+    prompt = f"""
+You are the final question editor for a
+high-accuracy Marathi quiz.
+
+Today:
+{today}
+
+Create up to {CANDIDATES_PER_RUN} candidate questions.
+
+FINAL REQUIREMENTS:
+
+Language:
+Marathi.
+
+Difficulty:
+Intermediate or Difficult only.
+
+Each question:
+- exactly 4 answer options
+- exactly 1 correct option
+- no ambiguity
+- no trick wording
+- no unsupported claim
+- natural Marathi
+- meaningful explanation
+
+SOURCE RULE:
+
+You may ONLY use facts explicitly supported by
+the evidence packet below.
+
+Do NOT use your general knowledge to fill gaps.
+
+The source URL for each question MUST be exactly
+one of the URLs listed in the evidence packet.
+
+Do NOT invent or modify URLs.
+
+Wikipedia is forbidden.
+
+The evidence_number must identify the exact evidence
+used for the question.
+
+A question must be rejected if:
+- evidence does not clearly support the answer
+- two options could reasonably be correct
+- the source is weak
+- the fact is disputed
+- the question is too easy
+- the Marathi wording changes the factual meaning
+
+OPTION RULE:
+
+The four options must be genuinely distinct.
+
+Only one option may be correct.
+
+Do not create a distractor that is partly correct.
+
+CATEGORY:
+
+Use the category supported by the evidence.
+
+The categories include:
+
+Current Affairs
+Maratha History
+Maharashtra History
+Indian History
+World History
+Indian Polity
+Geography
+Science
+Space & Technology
+Environment
+Economy
+Sports
+Maharashtra Culture
+Marathi Literature
+Indian Culture
+Awards
+International Affairs
+General Knowledge
+
+Return JSON only.
+
+EVIDENCE PACKET:
+
+{evidence_packet}
+"""
 
     response = client.models.generate_content(
         model=MODEL,
         contents=prompt,
-        config=types.GenerateContentConfig(
-            tools=[grounding_tool],
-
-            response_mime_type="application/json",
-
-            response_schema={
-                "type": "OBJECT",
-                "properties": {
-                    "questions": {
-                        "type": "ARRAY",
-                        "items": {
-                            "type": "OBJECT",
-                            "properties": {
-                                "question": {
-                                    "type": "STRING"
-                                },
-                                "options": {
-                                    "type": "ARRAY",
-                                    "items": {
-                                        "type": "STRING"
-                                    }
-                                },
-                                "correct_answer": {
-                                    "type": "INTEGER"
-                                },
-                                "category": {
-                                    "type": "STRING"
-                                },
-                                "difficulty": {
-                                    "type": "STRING"
-                                },
-                                "explanation": {
-                                    "type": "STRING"
-                                },
-                                "source": {
-                                    "type": "STRING"
-                                },
-                                "source_date": {
-                                    "type": "STRING"
-                                }
-                            },
-                            "required": [
-                                "question",
-                                "options",
-                                "correct_answer",
-                                "category",
-                                "difficulty",
-                                "explanation",
-                                "source",
-                                "source_date"
-                            ]
-                        }
-                    }
-                },
-                "required": ["questions"]
-            }
-        )
+        config={
+            "response_mime_type": "application/json",
+            "response_schema": schema
+        }
     )
 
-    return json.loads(response.text)["questions"]
+    data = json.loads(
+        response.text
+    )
+
+    return data.get(
+        "questions",
+        []
+    )
 
 
 # ============================================================
-# QUESTION VALIDATION
+# VALIDATE QUESTION
 # ============================================================
 
-def validate_question(q, allowed_article_urls):
-
-    if not isinstance(q, dict):
-        return False
+def validate_question(
+    q,
+    citations
+):
 
     required = [
         "question",
-        "options",
+        "option_a",
+        "option_b",
+        "option_c",
+        "option_d",
         "correct_answer",
         "category",
         "difficulty",
         "explanation",
         "source",
-        "source_date"
+        "evidence_number"
     ]
 
-    if any(field not in q for field in required):
+    if not isinstance(q, dict):
         return False
 
-    question = q["question"].strip()
-    options = q["options"]
+    for field in required:
+
+        if field not in q:
+            print(
+                f"Rejected: missing {field}"
+            )
+            return False
+
+    question = str(
+        q["question"]
+    ).strip()
+
+    options = [
+        str(q["option_a"]).strip(),
+        str(q["option_b"]).strip(),
+        str(q["option_c"]).strip(),
+        str(q["option_d"]).strip()
+    ]
 
     if not question:
         return False
 
-    if not isinstance(options, list):
-        return False
-
-    if len(options) != 4:
-        return False
-
     if any(
-        not isinstance(option, str)
-        or not option.strip()
+        not option
         for option in options
     ):
         return False
 
-    if len(set(
-        option.strip().lower()
+    # Exactly four unique options
+    normalized_options = [
+        normalize_text(option)
         for option in options
-    )) != 4:
+    ]
+
+    if len(
+        set(normalized_options)
+    ) != 4:
+        print(
+            "Rejected: duplicate options"
+        )
         return False
 
-    if q["correct_answer"] not in [0, 1, 2, 3]:
+    # Correct answer must be 0-3
+    if q["correct_answer"] not in [
+        0,
+        1,
+        2,
+        3
+    ]:
+        print(
+            "Rejected: invalid answer index"
+        )
         return False
 
+    # Categories
+    if q["category"] not in CATEGORIES:
+        print(
+            "Rejected: invalid category"
+        )
+        return False
+
+    # Difficulty
     if q["difficulty"] not in [
         "Intermediate",
         "Difficult"
     ]:
+        print(
+            "Rejected: invalid difficulty"
+        )
         return False
 
-    allowed_categories = {
-        "Current Affairs",
-        "Maratha History",
-        "Maharashtra History",
-        "Indian History",
-        "World History",
-        "Indian Polity",
-        "Geography",
-        "Science",
-        "Space & Technology",
-        "Environment",
-        "Economy",
-        "Sports",
-        "Maharashtra Culture",
-        "Marathi Literature",
-        "Indian Culture",
-        "Awards",
-        "International Affairs",
-        "General Knowledge"
-    }
-
-    if q["category"] not in allowed_categories:
+    if not str(
+        q["explanation"]
+    ).strip():
         return False
 
-    source = q["source"].strip()
+    source = str(
+        q["source"]
+    ).strip()
 
-    if not source.startswith(("http://", "https://")):
+    if not source.startswith(
+        ("http://", "https://")
+    ):
+        print(
+            "Rejected: invalid source URL"
+        )
         return False
 
-    if not is_approved_source(source):
-        print("Rejected: unapproved source")
+    if is_wikipedia(source):
+        print(
+            "Rejected: Wikipedia source"
+        )
         return False
 
-    # IMPORTANT:
-    # The source must actually be one of the source URLs
-    # supplied to the model for the initial PIB material.
-    #
-    # This prevents a hallucinated URL from being accepted.
-    #
-    normalized_source = source.rstrip("/")
-
-    normalized_allowed = {
-        url.rstrip("/")
-        for url in allowed_article_urls
-    }
-
-    if normalized_source not in normalized_allowed:
-        print("Rejected: source not in supplied source material")
+    if not hostname_is_approved(source):
+        print(
+            "Rejected: source domain not approved"
+        )
         return False
 
-    if not q["explanation"].strip():
+    # Source MUST correspond to evidence.
+    evidence_number = q[
+        "evidence_number"
+    ]
+
+    if not isinstance(
+        evidence_number,
+        int
+    ):
+        print(
+            "Rejected: invalid evidence number"
+        )
+        return False
+
+    if evidence_number < 0:
+        return False
+
+    if evidence_number >= len(
+        citations
+    ):
+        print(
+            "Rejected: nonexistent evidence"
+        )
+        return False
+
+    evidence_url = citations[
+        evidence_number
+    ]["url"]
+
+    if source.rstrip("/") != evidence_url.rstrip("/"):
+        print(
+            "Rejected: source does not match evidence"
+        )
         return False
 
     return True
 
 
 # ============================================================
+# OPTIONAL SOURCE RE-CHECK
+# ============================================================
+
+def source_is_reachable(url):
+
+    try:
+
+        response = requests.get(
+            url,
+            headers={
+                "User-Agent":
+                    "MarathiQuizUpdater/3.0"
+            },
+            timeout=15,
+            allow_redirects=True
+        )
+
+        if response.status_code >= 400:
+            return False
+
+        final_url = response.url
+
+        if is_wikipedia(final_url):
+            return False
+
+        return hostname_is_approved(
+            final_url
+        )
+
+    except Exception as exc:
+
+        print(
+            "Source check failed:",
+            exc
+        )
+
+        return False
+
+
+# ============================================================
 # SAVE TO SUPABASE
 # ============================================================
 
-def save_questions(questions, existing, allowed_article_urls):
+def save_questions(
+    questions,
+    existing,
+    citations
+):
 
     inserted = 0
 
+    today = datetime.now(
+        timezone.utc
+    ).date().isoformat()
+
     for q in questions:
+
+        if inserted >= QUESTIONS_PER_RUN:
+            break
 
         if not validate_question(
             q,
-            allowed_article_urls
+            citations
         ):
-            print("Skipped invalid/unverified question")
             continue
 
-        normalized = q["question"].strip().lower()
+        normalized = normalize_text(
+            q["question"]
+        )
 
         if normalized in existing:
-            print("Duplicate skipped")
+
+            print(
+                "Duplicate skipped:",
+                q["question"]
+            )
+
             continue
+
+        source = q["source"].strip()
+
+        # Re-check source availability.
+        if not source_is_reachable(
+            source
+        ):
+
+            print(
+                "Source unreachable; skipped:",
+                source
+            )
+
+            continue
+
+        payload = {
+            "question":
+                q["question"].strip(),
+
+            "option_a":
+                q["option_a"].strip(),
+
+            "option_b":
+                q["option_b"].strip(),
+
+            "option_c":
+                q["option_c"].strip(),
+
+            "option_d":
+                q["option_d"].strip(),
+
+            "correct_answer":
+                int(q["correct_answer"]),
+
+            "category":
+                q["category"],
+
+            "difficulty":
+                q["difficulty"],
+
+            "explanation":
+                q["explanation"].strip(),
+
+            "source":
+                source,
+
+            # This is the date on which the question
+            # passed our automated verification pipeline.
+            "source_date":
+                today
+        }
 
         response = requests.post(
             REST_URL,
             headers=SUPABASE_HEADERS,
-            json=q,
+            json=payload,
             timeout=30
         )
 
@@ -533,12 +1026,15 @@ def save_questions(questions, existing, allowed_article_urls):
 
             continue
 
-        existing.add(normalized)
+        existing.add(
+            normalized
+        )
 
         inserted += 1
 
         print(
-            f"Inserted {inserted}: "
+            f"INSERTED {inserted}/"
+            f"{QUESTIONS_PER_RUN}: "
             f"{q['question']}"
         )
 
@@ -551,25 +1047,29 @@ def save_questions(questions, existing, allowed_article_urls):
 
 def main():
 
+    print("=" * 60)
     print(
-        "Starting Marathi Quiz "
-        "automatic updater..."
+        "MARATHI QUIZ AUTOMATIC UPDATER"
     )
-
-    articles = fetch_pib_articles()
-
-    if not articles:
-        print("No official PIB articles found.")
-        return
+    print("=" * 60)
 
     print(
-        f"Found {len(articles)} PIB articles."
+        f"Target: {QUESTIONS_PER_RUN} questions"
     )
 
-    allowed_article_urls = [
-        article["link"]
-        for article in articles
-    ]
+    print(
+        "Difficulty: Intermediate -> Difficult"
+    )
+
+    print(
+        "Language: Marathi"
+    )
+
+    print(
+        "Wikipedia: FORBIDDEN"
+    )
+
+    print()
 
     existing = get_existing_questions()
 
@@ -578,35 +1078,76 @@ def main():
         f"{len(existing)}"
     )
 
-    questions = generate_questions(
-        articles
+    print()
+    print(
+        "Researching trusted sources..."
+    )
+
+    interaction = research_facts()
+
+    citations = extract_citations(
+        interaction
     )
 
     print(
-        f"Generated candidates: "
+        f"Approved search citations found: "
+        f"{len(citations)}"
+    )
+
+    if len(citations) < 8:
+
+        raise RuntimeError(
+            "Too few approved source citations. "
+            "Questions will not be generated."
+        )
+
+    evidence_packet = build_evidence_packet(
+        interaction,
+        citations
+    )
+
+    print(
+        "Generating candidate questions..."
+    )
+
+    questions = generate_questions(
+        evidence_packet
+    )
+
+    print(
+        f"Candidate questions generated: "
         f"{len(questions)}"
     )
 
     inserted = save_questions(
         questions,
         existing,
-        allowed_article_urls
+        citations
     )
 
+    print()
+    print("=" * 60)
     print(
-        f"Successfully inserted: "
-        f"{inserted}"
+        f"FINAL RESULT: {inserted}/"
+        f"{QUESTIONS_PER_RUN} inserted"
     )
+    print("=" * 60)
 
     if inserted < QUESTIONS_PER_RUN:
 
         print(
-            "WARNING: Daily target was not "
-            "reached because insufficient "
-            "questions passed validation."
+            "WARNING: Daily target was not reached."
         )
 
-    print("Updater finished.")
+        print(
+            "No unverified questions were inserted."
+        )
+
+    else:
+
+        print(
+            "SUCCESS: Daily target reached."
+        )
 
 
 if __name__ == "__main__":

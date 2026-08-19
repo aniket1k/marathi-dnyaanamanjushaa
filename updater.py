@@ -5,34 +5,44 @@ from datetime import datetime, timezone
 from urllib.parse import urlparse
 
 import requests
+import feedparser
 from google import genai
 
 
 # ============================================================
-# CONFIG
+# CONFIGURATION
 # ============================================================
 
 GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_SECRET_KEY = os.environ["SUPABASE_SECRET_KEY"]
 
-# Free-tier-friendly model
-MODEL = "gemini-2.5-flash-lite"
+MODEL = "gemini-3.5-flash-lite"
 
 QUESTIONS_PER_RUN = 16
 
-# We deliberately ask for a few extra candidates.
-# Invalid/ambiguous questions are discarded.
+# Generate extra candidates because bad/duplicate questions
+# will be rejected.
 CANDIDATES_PER_RUN = 22
+
+USER_AGENT = (
+    "Mozilla/5.0 "
+    "MarathiQuizUpdater/1.0"
+)
 
 
 # ============================================================
-# CLIENTS
+# GEMINI
 # ============================================================
 
 client = genai.Client(
     api_key=GEMINI_API_KEY
 )
+
+
+# ============================================================
+# SUPABASE
+# ============================================================
 
 REST_URL = (
     f"{SUPABASE_URL.rstrip('/')}"
@@ -41,55 +51,189 @@ REST_URL = (
 
 SUPABASE_HEADERS = {
     "apikey": SUPABASE_SECRET_KEY,
-    "Authorization": f"Bearer {SUPABASE_SECRET_KEY}",
+    "Authorization": (
+        f"Bearer {SUPABASE_SECRET_KEY}"
+    ),
     "Content-Type": "application/json",
     "Prefer": "return=minimal"
 }
 
 
 # ============================================================
-# APPROVED SOURCES
+# TRUSTED RSS SOURCES
+# ============================================================
+
+RSS_SOURCES = [
+
+    {
+        "name": "Press Information Bureau",
+        "url": (
+            "https://pib.gov.in/"
+            "RssMain.aspx?"
+            "ModId=6&Lang=1&Regid=1"
+        ),
+        "categories": [
+            "Current Affairs",
+            "Indian Polity",
+            "Economy",
+            "Science",
+            "Environment",
+            "Awards"
+        ]
+    },
+
+]
+
+
+# ============================================================
+# TRUSTED DIRECT SOURCES
+#
+# These are used as source pages for non-current categories.
+# We fetch the actual page and give its content to Gemini.
+# ============================================================
+
+DIRECT_SOURCES = [
+
+    {
+        "name": "Encyclopaedia Britannica - Maratha Empire",
+        "url": (
+            "https://www.britannica.com/"
+            "place/Maratha-Empire"
+        ),
+        "categories": [
+            "Maratha History",
+            "Indian History"
+        ]
+    },
+
+    {
+        "name": "Encyclopaedia Britannica - Shivaji",
+        "url": (
+            "https://www.britannica.com/"
+            "biography/Shivaji"
+        ),
+        "categories": [
+            "Maratha History",
+            "Indian History"
+        ]
+    },
+
+    {
+        "name": "Encyclopaedia Britannica - India",
+        "url": (
+            "https://www.britannica.com/"
+            "place/India"
+        ),
+        "categories": [
+            "Indian History",
+            "Geography",
+            "Indian Culture"
+        ]
+    },
+
+    {
+        "name": "Encyclopaedia Britannica - Maharashtra",
+        "url": (
+            "https://www.britannica.com/"
+            "place/Maharashtra"
+        ),
+        "categories": [
+            "Maharashtra History",
+            "Geography",
+            "Maharashtra Culture"
+        ]
+    },
+
+    {
+        "name": "NASA",
+        "url": "https://www.nasa.gov/news/",
+        "categories": [
+            "Science",
+            "Space & Technology"
+        ]
+    },
+
+    {
+        "name": "ISRO",
+        "url": "https://www.isro.gov.in/",
+        "categories": [
+            "Science",
+            "Space & Technology",
+            "Current Affairs"
+        ]
+    },
+
+    {
+        "name": "RBI",
+        "url": "https://www.rbi.org.in/",
+        "categories": [
+            "Economy",
+            "Current Affairs"
+        ]
+    },
+
+    {
+        "name": "UNESCO",
+        "url": "https://www.unesco.org/en",
+        "categories": [
+            "World History",
+            "Indian Culture",
+            "International Affairs",
+            "Environment"
+        ]
+    },
+
+    {
+        "name": "WHO",
+        "url": "https://www.who.int/news",
+        "categories": [
+            "Science",
+            "Environment",
+            "International Affairs"
+        ]
+    },
+
+    {
+        "name": "Nobel Prize",
+        "url": "https://www.nobelprize.org/",
+        "categories": [
+            "Awards",
+            "Science",
+            "Current Affairs"
+        ]
+    },
+
+    {
+        "name": "Olympics",
+        "url": "https://olympics.com/en/news",
+        "categories": [
+            "Sports",
+            "Current Affairs"
+        ]
+    },
+
+]
+
+
+# ============================================================
+# APPROVED DOMAINS
 # ============================================================
 
 APPROVED_DOMAINS = {
-    # Government / official India
+
+    "pib.gov.in",
     "gov.in",
     "nic.in",
-    "pib.gov.in",
-    "india.gov.in",
-    "sansad.in",
     "rbi.org.in",
-    "eci.gov.in",
     "isro.gov.in",
-    "asi.nic.in",
-    "culture.gov.in",
-
-    # Maharashtra
-    "maharashtra.gov.in",
-    "maharashtratourism.gov.in",
-    "mtdc.co",
-
-    # International institutions
-    "un.org",
+    "nasa.gov",
     "unesco.org",
     "who.int",
-    "worldbank.org",
-    "imf.org",
-    "nasa.gov",
     "nobelprize.org",
-
-    # Sports
-    "icc-cricket.com",
     "olympics.com",
-    "fifa.com",
-    "uefa.com",
-    "worldathletics.org",
-    "formula1.com",
-
-    # Strong reference/news sources
     "britannica.com",
-    "reuters.com",
-    "apnews.com"
+    "maharashtra.gov.in",
+    "maharashtratourism.gov.in"
 }
 
 
@@ -98,6 +242,7 @@ APPROVED_DOMAINS = {
 # ============================================================
 
 CATEGORIES = [
+
     "Current Affairs",
     "Maratha History",
     "Maharashtra History",
@@ -116,11 +261,12 @@ CATEGORIES = [
     "Awards",
     "International Affairs",
     "General Knowledge"
+
 ]
 
 
 # ============================================================
-# BASIC HELPERS
+# HELPERS
 # ============================================================
 
 def normalize_text(text):
@@ -147,29 +293,26 @@ def is_wikipedia(url):
 
         return (
             hostname == "wikipedia.org"
-            or hostname.endswith(".wikipedia.org")
+            or hostname.endswith(
+                ".wikipedia.org"
+            )
             or hostname == "wikimedia.org"
-            or hostname.endswith(".wikimedia.org")
+            or hostname.endswith(
+                ".wikimedia.org"
+            )
         )
 
     except Exception:
+
         return False
 
 
-def hostname_is_approved(url):
+def approved_domain(url):
 
     try:
 
-        parsed = urlparse(url)
-
-        if parsed.scheme not in (
-            "http",
-            "https"
-        ):
-            return False
-
         hostname = (
-            parsed.hostname
+            urlparse(url).hostname
             or ""
         ).lower()
 
@@ -192,11 +335,185 @@ def hostname_is_approved(url):
         return False
 
     except Exception:
+
         return False
 
 
 # ============================================================
-# SUPABASE
+# FETCH RSS
+# ============================================================
+
+def fetch_rss_sources():
+
+    articles = []
+
+    for source in RSS_SOURCES:
+
+        try:
+
+            print(
+                "Fetching:",
+                source["name"]
+            )
+
+            feed = feedparser.parse(
+                source["url"]
+            )
+
+            for entry in feed.entries[:20]:
+
+                title = (
+                    entry.get(
+                        "title",
+                        ""
+                    ).strip()
+                )
+
+                summary = (
+                    entry.get(
+                        "summary",
+                        ""
+                    ).strip()
+                )
+
+                link = (
+                    entry.get(
+                        "link",
+                        ""
+                    ).strip()
+                )
+
+                if not title or not link:
+                    continue
+
+                if is_wikipedia(link):
+                    continue
+
+                if not approved_domain(link):
+                    continue
+
+                articles.append({
+
+                    "title": title,
+
+                    "summary": summary,
+
+                    "source": source["name"],
+
+                    "url": link,
+
+                    "categories":
+                        source["categories"]
+
+                })
+
+        except Exception as exc:
+
+            print(
+                "RSS error:",
+                source["name"],
+                exc
+            )
+
+    return articles
+
+
+# ============================================================
+# FETCH DIRECT SOURCES
+# ============================================================
+
+def fetch_direct_sources():
+
+    documents = []
+
+    for source in DIRECT_SOURCES:
+
+        try:
+
+            print(
+                "Fetching:",
+                source["name"]
+            )
+
+            response = requests.get(
+                source["url"],
+                headers={
+                    "User-Agent":
+                        USER_AGENT
+                },
+                timeout=20
+            )
+
+            if response.status_code >= 400:
+
+                print(
+                    "Skipped:",
+                    response.status_code
+                )
+
+                continue
+
+            text = response.text
+
+            # Remove scripts/styles to reduce noise.
+            text = re.sub(
+                r"<script.*?</script>",
+                " ",
+                text,
+                flags=re.S | re.I
+            )
+
+            text = re.sub(
+                r"<style.*?</style>",
+                " ",
+                text,
+                flags=re.S | re.I
+            )
+
+            text = re.sub(
+                r"<[^>]+>",
+                " ",
+                text
+            )
+
+            text = re.sub(
+                r"\s+",
+                " ",
+                text
+            ).strip()
+
+            # Don't send enormous webpages to Gemini.
+            text = text[:30000]
+
+            if len(text) < 500:
+                continue
+
+            documents.append({
+
+                "source": source["name"],
+
+                "url": source["url"],
+
+                "categories":
+                    source["categories"],
+
+                "text": text
+
+            })
+
+        except Exception as exc:
+
+            print(
+                "Direct source error:",
+                source["name"],
+                exc
+            )
+
+    return documents
+
+
+# ============================================================
+# GET EXISTING QUESTIONS
 # ============================================================
 
 def get_existing_questions():
@@ -215,373 +532,388 @@ def get_existing_questions():
 
     response.raise_for_status()
 
-    rows = response.json()
-
     return {
-        normalize_text(row["question"])
-        for row in rows
+
+        normalize_text(
+            row["question"]
+        )
+
+        for row in response.json()
+
         if row.get("question")
+
     }
 
 
 # ============================================================
-# CATEGORY ROTATION
+# BUILD RESEARCH PACKET
 # ============================================================
 
-def build_category_plan():
+def build_research_packet():
 
-    day_number = datetime.now(
-        timezone.utc
-    ).timetuple().tm_yday
-
-    rotating = CATEGORIES[1:]
-
-    offset = day_number % len(
-        rotating
+    rss_articles = (
+        fetch_rss_sources()
     )
 
-    rotated = (
-        rotating[offset:]
-        + rotating[:offset]
+    direct_documents = (
+        fetch_direct_sources()
     )
 
-    plan = [
-        "Current Affairs",
-        "Current Affairs"
-    ]
+    packet = {
 
-    plan.extend(
-        rotated[:14]
-    )
+        "rss_articles":
+            rss_articles,
 
-    return plan
+        "reference_documents":
+            direct_documents
+
+    }
+
+    return packet
 
 
 # ============================================================
-# RESEARCH + QUESTION GENERATION
+# GENERATE QUESTIONS
 # ============================================================
 
-def generate_questions():
+def generate_questions(packet):
 
     today = datetime.now(
         timezone.utc
     ).date().isoformat()
 
-    category_plan = (
-        build_category_plan()
+    packet_text = json.dumps(
+        packet,
+        ensure_ascii=False,
+        indent=2
     )
 
-    category_text = "\n".join(
-        f"{i + 1}. {category}"
-        for i, category
-        in enumerate(category_plan)
-    )
+    # Keep request reasonably small.
+    packet_text = packet_text[:120000]
 
     prompt = f"""
-You are the research and question-generation engine
-for a high-accuracy Marathi quiz.
+तुम्ही अत्यंत काटेकोर fact-checking
+quiz editor आहात.
 
-TODAY:
+तारीख:
 {today}
 
-Generate up to {CANDIDATES_PER_RUN}
-candidate questions.
+तुमचे काम:
+खाली दिलेल्या TRUSTED SOURCE MATERIAL मधून
+मराठीमध्ये बहुपर्यायी प्रश्न तयार करणे.
 
-The final database should receive up to
-{QUESTIONS_PER_RUN} verified questions.
+एकूण candidate questions:
+{CANDIDATES_PER_RUN}
 
-LANGUAGE:
-Marathi.
+अंतिम उद्दिष्ट:
+जास्तीत जास्त {QUESTIONS_PER_RUN}
+विश्वसनीय प्रश्न.
 
-DIFFICULTY:
-Intermediate or Difficult.
+====================================================
+अत्यंत महत्त्वाचे SOURCE RULES
+====================================================
 
-EVERY QUESTION MUST HAVE:
-- exactly 4 options
-- exactly 1 correct option
-- clear wording
-- no ambiguity
-- factual answer
-- short Marathi explanation
+तुम्ही स्वतः इंटरनेटवर शोध घेऊ नका.
 
-============================================================
-ABSOLUTE SOURCE RULE
-============================================================
+फक्त खाली दिलेल्या source material वर आधारित
+प्रश्न तयार करा.
 
-Wikipedia is STRICTLY FORBIDDEN.
+Wikipedia STRICTLY FORBIDDEN आहे.
 
-Never use:
-- Wikipedia
-- Wikidata
-- Wikimedia
-- random quiz sites
-- GK blogs
-- anonymous blogs
-- social media
-- unsourced websites
-- AI-generated websites
+Wikipedia, Wikidata किंवा Wikimedia आढळल्यास
+तो source वापरू नका.
 
-Prefer these sources:
+दिलेल्या source material मध्ये माहिती नसल्यास
+प्रश्न तयार करू नका.
 
-1. Indian government websites
-2. Maharashtra government websites
-3. Official institutional websites
-4. Official international organizations
-5. Official sports organizations
-6. Britannica
-7. Reuters
-8. Associated Press
+स्वतःचे तथ्य, तारीख, व्यक्ती, संख्या,
+पुरस्कार, पद किंवा घटना बनवू नका.
 
-A source must actually support the answer.
+====================================================
+ACCURACY
+====================================================
 
-DO NOT INVENT SOURCE URLs.
+प्रत्येक प्रश्नासाठी source material मध्ये
+उत्तराचा स्पष्ट आधार असणे आवश्यक आहे.
 
-============================================================
-RESEARCH RULE
-============================================================
+जर तथ्य ambiguous असेल:
+प्रश्न वगळा.
 
-Use Google Search grounding.
+जर दोन पर्याय बरोबर होऊ शकत असतील:
+प्रश्न वगळा.
 
-Search for reliable sources BEFORE deciding
-on the question.
+जर source पुरेसा स्पष्ट नसेल:
+प्रश्न वगळा.
 
-For historical questions, prefer authoritative
-institutional/reference sources.
+16 प्रश्न पूर्ण करण्यासाठी accuracy चा
+कधीही compromise करू नका.
 
-For current affairs, prefer recent official
-or highly reputable sources.
+====================================================
+भाषा
+====================================================
 
-If you cannot find a trustworthy source,
-DO NOT create the question.
+सर्व प्रश्न, पर्याय आणि explanation
+मराठीत असावेत.
 
-============================================================
-CATEGORY PLAN
-============================================================
+व्यक्तींची नावे, संस्थांची नावे आणि
+अधिकृत संज्ञा आवश्यकतेनुसार मूळ स्वरूपात
+ठेवू शकता.
 
-{category_text}
+====================================================
+DIFFICULTY
+====================================================
 
-Try to cover the categories in the plan.
+Intermediate ते Difficult.
 
-Current Affairs should be emphasized.
+अतिशय सोपे प्रश्न टाळा.
 
-Maratha History should appear regularly.
+====================================================
+CATEGORIES
+====================================================
 
-============================================================
-QUESTION QUALITY
-============================================================
+खालील categories वापरा:
 
-Avoid:
-- very easy questions
-- disputed historical claims
-- vague dates
-- questions with multiple correct answers
-- subjective questions
-- opinion questions
-- trick questions
-- questions where two options could reasonably
-  be accepted
+{json.dumps(CATEGORIES, ensure_ascii=False)}
 
-For every question, the source must clearly
-support the correct answer.
+Current Affairs ला प्राधान्य द्या.
 
-============================================================
-SOURCE FIELD
-============================================================
+Maratha History आणि Maharashtra History
+नियमितपणे समाविष्ट करा.
 
-The source field MUST contain the exact URL
-of the source used.
+इतर categories उपलब्ध source material नुसार
+वापरा.
 
-Do not manufacture URLs.
+====================================================
+4 OPTIONS
+====================================================
 
-============================================================
+प्रत्येक प्रश्नाला exactly 4 options.
+
+फक्त एक correct answer.
+
+correct_answer:
+
+0 = पहिला पर्याय
+1 = दुसरा पर्याय
+2 = तिसरा पर्याय
+3 = चौथा पर्याय
+
+====================================================
+SOURCE
+====================================================
+
+source field मध्ये source material मधील
+अचूक URL द्या.
+
+URL बनवू नका.
+
+Wikipedia URL देऊ नका.
+
+====================================================
 OUTPUT
-============================================================
+====================================================
 
-Return JSON only.
+फक्त JSON द्या.
 
-Schema:
+Format:
 
 {{
   "questions": [
     {{
       "question": "मराठी प्रश्न",
-      "option_a": "पर्याय अ",
-      "option_b": "पर्याय ब",
-      "option_c": "पर्याय क",
-      "option_d": "पर्याय ड",
+      "options": [
+        "पर्याय 1",
+        "पर्याय 2",
+        "पर्याय 3",
+        "पर्याय 4"
+      ],
       "correct_answer": 0,
       "category": "Current Affairs",
       "difficulty": "Intermediate",
-      "explanation": "मराठी स्पष्टीकरण",
-      "source": "https://real-source-url.example",
+      "explanation": "मराठीत थोडक्यात स्पष्टीकरण.",
+      "source": "https://trusted-source.example/page",
       "source_date": "{today}"
     }}
   ]
 }}
 
-correct_answer MUST be:
-0 = option_a
-1 = option_b
-2 = option_c
-3 = option_d
+====================================================
+TRUSTED SOURCE MATERIAL
+====================================================
 
-If reliable questions cannot be produced,
-return fewer questions.
-
-NEVER sacrifice accuracy to reach 16.
-
-============================================================
-IMPORTANT
-============================================================
-
-The source URL must come from the actual
-Google Search-grounded research.
-
-Do not use Wikipedia under any circumstances.
+{packet_text}
 """
 
     response = client.models.generate_content(
+
         model=MODEL,
+
         contents=prompt,
+
         config={
-            "response_mime_type": "application/json",
+
+            "response_mime_type":
+                "application/json",
+
             "response_schema": {
+
                 "type": "OBJECT",
+
                 "properties": {
+
                     "questions": {
+
                         "type": "ARRAY",
+
                         "items": {
+
                             "type": "OBJECT",
+
                             "properties": {
-                                "question": {
-                                    "type": "STRING"
+
+                                "question":
+                                    {
+                                        "type":
+                                            "STRING"
+                                    },
+
+                                "options": {
+
+                                    "type":
+                                        "ARRAY",
+
+                                    "items": {
+                                        "type":
+                                            "STRING"
+                                    }
+
                                 },
-                                "option_a": {
-                                    "type": "STRING"
-                                },
-                                "option_b": {
-                                    "type": "STRING"
-                                },
-                                "option_c": {
-                                    "type": "STRING"
-                                },
-                                "option_d": {
-                                    "type": "STRING"
-                                },
-                                "correct_answer": {
-                                    "type": "INTEGER"
-                                },
-                                "category": {
-                                    "type": "STRING"
-                                },
-                                "difficulty": {
-                                    "type": "STRING"
-                                },
-                                "explanation": {
-                                    "type": "STRING"
-                                },
-                                "source": {
-                                    "type": "STRING"
-                                },
-                                "source_date": {
-                                    "type": "STRING"
-                                }
+
+                                "correct_answer":
+                                    {
+                                        "type":
+                                            "INTEGER"
+                                    },
+
+                                "category":
+                                    {
+                                        "type":
+                                            "STRING"
+                                    },
+
+                                "difficulty":
+                                    {
+                                        "type":
+                                            "STRING"
+                                    },
+
+                                "explanation":
+                                    {
+                                        "type":
+                                            "STRING"
+                                    },
+
+                                "source":
+                                    {
+                                        "type":
+                                            "STRING"
+                                    },
+
+                                "source_date":
+                                    {
+                                        "type":
+                                            "STRING"
+                                    }
+
                             },
+
                             "required": [
+
                                 "question",
-                                "option_a",
-                                "option_b",
-                                "option_c",
-                                "option_d",
+                                "options",
                                 "correct_answer",
                                 "category",
                                 "difficulty",
                                 "explanation",
                                 "source",
                                 "source_date"
+
                             ]
+
                         }
+
                     }
+
                 },
+
                 "required": [
                     "questions"
                 ]
-            },
 
-            # Google Search grounding
-            "tools": [
-                {
-                    "google_search": {}
-                }
-            ]
+            }
+
         }
+
     )
 
-    return json.loads(
+    data = json.loads(
         response.text
-    ).get(
+    )
+
+    return data.get(
         "questions",
         []
     )
 
 
 # ============================================================
-# VALIDATION
+# VALIDATE QUESTION
 # ============================================================
 
 def validate_question(q):
 
     required = [
+
         "question",
-        "option_a",
-        "option_b",
-        "option_c",
-        "option_d",
+        "options",
         "correct_answer",
         "category",
         "difficulty",
         "explanation",
         "source",
         "source_date"
+
     ]
 
-    if not isinstance(
-        q,
-        dict
-    ):
+    if not isinstance(q, dict):
         return False
 
     for field in required:
 
         if field not in q:
-            print(
-                f"Rejected: missing {field}"
-            )
             return False
 
-    question = str(
-        q["question"]
-    ).strip()
+    if not isinstance(
+        q["options"],
+        list
+    ):
+        return False
 
-    options = [
-        str(q["option_a"]).strip(),
-        str(q["option_b"]).strip(),
-        str(q["option_c"]).strip(),
-        str(q["option_d"]).strip()
-    ]
-
-    if not question:
+    if len(q["options"]) != 4:
         return False
 
     if any(
-        not option
-        for option in options
+        not str(x).strip()
+        for x in q["options"]
     ):
         return False
 
     normalized_options = [
-        normalize_text(option)
-        for option in options
+
+        normalize_text(x)
+
+        for x in q["options"]
+
     ]
 
     if len(
@@ -601,17 +933,9 @@ def validate_question(q):
         3
     ]:
 
-        print(
-            "Rejected: invalid correct_answer"
-        )
-
         return False
 
     if q["category"] not in CATEGORIES:
-
-        print(
-            "Rejected: invalid category"
-        )
 
         return False
 
@@ -620,8 +944,38 @@ def validate_question(q):
         "Difficult"
     ]:
 
+        return False
+
+    question = str(
+        q["question"]
+    ).strip()
+
+    if not question:
+        return False
+
+    source = str(
+        q["source"]
+    ).strip()
+
+    if not source.startswith(
+        "https://"
+    ):
+
+        return False
+
+    if is_wikipedia(source):
+
         print(
-            "Rejected: invalid difficulty"
+            "Rejected Wikipedia question"
+        )
+
+        return False
+
+    if not approved_domain(source):
+
+        print(
+            "Rejected unapproved source:",
+            source
         )
 
         return False
@@ -632,88 +986,11 @@ def validate_question(q):
 
         return False
 
-    source = str(
-        q["source"]
-    ).strip()
-
-    if not source.startswith(
-        (
-            "https://",
-            "http://"
-        )
-    ):
-
-        print(
-            "Rejected: invalid source"
-        )
-
-        return False
-
-    if is_wikipedia(source):
-
-        print(
-            "Rejected: Wikipedia"
-        )
-
-        return False
-
-    if not hostname_is_approved(
-        source
-    ):
-
-        print(
-            "Rejected: unapproved source"
-        )
-
-        return False
-
     return True
 
 
 # ============================================================
-# SOURCE REACHABILITY
-# ============================================================
-
-def source_is_reachable(url):
-
-    try:
-
-        response = requests.get(
-            url,
-            headers={
-                "User-Agent":
-                    "MarathiQuizUpdater/1.0"
-            },
-            timeout=15,
-            allow_redirects=True
-        )
-
-        if response.status_code >= 400:
-            return False
-
-        final_url = response.url
-
-        if is_wikipedia(
-            final_url
-        ):
-            return False
-
-        return hostname_is_approved(
-            final_url
-        )
-
-    except Exception as exc:
-
-        print(
-            "Source check failed:",
-            exc
-        )
-
-        return False
-
-
-# ============================================================
-# SAVE
+# SAVE QUESTIONS
 # ============================================================
 
 def save_questions(
@@ -733,6 +1010,11 @@ def save_questions(
             break
 
         if not validate_question(q):
+
+            print(
+                "Skipped invalid question"
+            )
+
             continue
 
         normalized = normalize_text(
@@ -742,40 +1024,26 @@ def save_questions(
         if normalized in existing:
 
             print(
-                "Duplicate skipped:",
+                "Duplicate skipped:"
+            )
+
+            print(
                 q["question"]
             )
 
             continue
 
-        source = q["source"].strip()
-
-        if not source_is_reachable(
-            source
-        ):
-
-            print(
-                "Source unreachable; skipped:",
-                source
-            )
-
-            continue
-
         payload = {
+
             "question":
                 q["question"].strip(),
 
-            "option_a":
-                q["option_a"].strip(),
-
-            "option_b":
-                q["option_b"].strip(),
-
-            "option_c":
-                q["option_c"].strip(),
-
-            "option_d":
-                q["option_d"].strip(),
+            "options":
+                [
+                    str(option).strip()
+                    for option
+                    in q["options"]
+                ],
 
             "correct_answer":
                 int(q["correct_answer"]),
@@ -790,24 +1058,36 @@ def save_questions(
                 q["explanation"].strip(),
 
             "source":
-                source,
+                q["source"].strip(),
 
             "source_date":
                 today
+
         }
 
         response = requests.post(
+
             REST_URL,
+
             headers=SUPABASE_HEADERS,
+
             json=payload,
+
             timeout=30
+
         )
 
         if response.status_code >= 300:
 
             print(
-                "Supabase error:",
-                response.status_code,
+                "Supabase error:"
+            )
+
+            print(
+                response.status_code
+            )
+
+            print(
                 response.text
             )
 
@@ -820,8 +1100,8 @@ def save_questions(
         inserted += 1
 
         print(
-            f"INSERTED {inserted}/"
-            f"{QUESTIONS_PER_RUN}: "
+            f"INSERTED "
+            f"{inserted}/{QUESTIONS_PER_RUN}: "
             f"{q['question']}"
         )
 
@@ -835,13 +1115,16 @@ def save_questions(
 def main():
 
     print("=" * 60)
+
     print(
         "MARATHI QUIZ AUTOMATIC UPDATER"
     )
+
     print("=" * 60)
 
     print(
-        f"Target: {QUESTIONS_PER_RUN}"
+        f"Target: "
+        f"{QUESTIONS_PER_RUN}"
     )
 
     print(
@@ -860,9 +1143,15 @@ def main():
         "Wikipedia: FORBIDDEN"
     )
 
+    print(
+        "Google Search grounding: DISABLED"
+    )
+
     print()
 
-    existing = get_existing_questions()
+    existing = (
+        get_existing_questions()
+    )
 
     print(
         f"Existing questions: "
@@ -872,15 +1161,58 @@ def main():
     print()
 
     print(
-        "Researching trusted sources..."
+        "Fetching trusted source material..."
     )
 
-    questions = generate_questions()
+    packet = (
+        build_research_packet()
+    )
+
+    rss_count = len(
+        packet["rss_articles"]
+    )
+
+    document_count = len(
+        packet["reference_documents"]
+    )
+
+    print(
+        f"RSS articles: "
+        f"{rss_count}"
+    )
+
+    print(
+        f"Reference documents: "
+        f"{document_count}"
+    )
+
+    if (
+        rss_count == 0
+        and document_count == 0
+    ):
+
+        print(
+            "ERROR: No trusted source material."
+        )
+
+        return
+
+    print()
+
+    print(
+        "Generating Marathi questions..."
+    )
+
+    questions = (
+        generate_questions(packet)
+    )
 
     print(
         f"Candidates generated: "
         f"{len(questions)}"
     )
+
+    print()
 
     inserted = save_questions(
         questions,
@@ -898,22 +1230,32 @@ def main():
 
     print("=" * 60)
 
+    if inserted == 0:
+
+        raise RuntimeError(
+            "No verified questions were inserted."
+        )
+
     if inserted < QUESTIONS_PER_RUN:
 
         print(
-            "WARNING: Target not reached."
+            "WARNING: Daily target was "
+            "not reached."
         )
 
         print(
-            "Unverified questions were NOT inserted."
+            "This is intentional: "
+            "unverified questions are "
+            "never inserted."
         )
 
     else:
 
         print(
-            "SUCCESS: Daily target reached."
+            "SUCCESS: 16 questions inserted."
         )
 
 
 if __name__ == "__main__":
+
     main()

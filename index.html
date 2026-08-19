@@ -1,0 +1,1073 @@
+<!DOCTYPE html>
+<html lang="mr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>मराठी ज्ञानमंजुषा</title>
+
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: "Noto Sans Devanagari", "Nirmala UI", Arial, sans-serif;
+      background: #f4f6fb;
+      color: #1f2937;
+    }
+
+    .container {
+      width: min(900px, 94%);
+      margin: 30px auto;
+    }
+
+    .header {
+      background: white;
+      border-radius: 18px;
+      padding: 25px;
+      box-shadow: 0 5px 20px rgba(0,0,0,0.08);
+      margin-bottom: 20px;
+      text-align: center;
+    }
+
+    .header h1 {
+      margin: 0 0 8px;
+      font-size: 30px;
+    }
+
+    .header p {
+      margin: 0;
+      color: #6b7280;
+    }
+
+    .card {
+      background: white;
+      border-radius: 18px;
+      padding: 25px;
+      box-shadow: 0 5px 20px rgba(0,0,0,0.08);
+    }
+
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+    }
+
+    .badge {
+      background: #eef2ff;
+      color: #3730a3;
+      padding: 7px 12px;
+      border-radius: 20px;
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    .progress {
+      height: 9px;
+      background: #e5e7eb;
+      border-radius: 20px;
+      overflow: hidden;
+      margin-bottom: 25px;
+    }
+
+    .progress-bar {
+      height: 100%;
+      width: 0%;
+      transition: width 0.3s ease;
+    }
+
+    .question-number {
+      font-size: 15px;
+      color: #6b7280;
+      margin-bottom: 8px;
+    }
+
+    .question {
+      font-size: 23px;
+      font-weight: 700;
+      line-height: 1.6;
+      margin-bottom: 25px;
+    }
+
+    .options {
+      display: grid;
+      gap: 13px;
+    }
+
+    .option {
+      width: 100%;
+      text-align: left;
+      padding: 16px;
+      border: 2px solid #e5e7eb;
+      background: white;
+      border-radius: 12px;
+      cursor: pointer;
+      font-size: 17px;
+      transition: 0.2s;
+      font-family: inherit;
+    }
+
+    .option:hover:not(:disabled) {
+      border-color: #6366f1;
+      background: #f8f8ff;
+    }
+
+    .option:disabled {
+      cursor: default;
+    }
+
+    .option.correct {
+      border-color: #16a34a;
+      background: #f0fdf4;
+    }
+
+    .option.wrong {
+      border-color: #dc2626;
+      background: #fef2f2;
+    }
+
+    .explanation {
+      margin-top: 20px;
+      padding: 16px;
+      border-radius: 12px;
+      background: #f8fafc;
+      border-left: 4px solid #6366f1;
+      line-height: 1.6;
+      display: none;
+    }
+
+    .source {
+      margin-top: 12px;
+      font-size: 14px;
+    }
+
+    .source a {
+      text-decoration: none;
+      word-break: break-all;
+    }
+
+    .controls {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      margin-top: 25px;
+    }
+
+    button.main-button {
+      border: none;
+      padding: 13px 22px;
+      border-radius: 10px;
+      cursor: pointer;
+      font-size: 16px;
+      font-weight: 700;
+      font-family: inherit;
+    }
+
+    .next-button {
+      display: none;
+    }
+
+    .start-screen,
+    .result-screen,
+    .loading,
+    .error {
+      text-align: center;
+    }
+
+    .start-screen h2,
+    .result-screen h2 {
+      font-size: 28px;
+    }
+
+    .start-button {
+      margin-top: 20px;
+      font-size: 18px !important;
+      padding: 15px 35px !important;
+    }
+
+    .score {
+      font-size: 48px;
+      font-weight: 800;
+      margin: 20px 0;
+    }
+
+    .loading {
+      padding: 40px 10px;
+      color: #6b7280;
+    }
+
+    .error {
+      color: #b91c1c;
+      padding: 20px;
+      background: #fef2f2;
+      border-radius: 12px;
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    @media (max-width: 600px) {
+      .container {
+        margin: 15px auto;
+      }
+
+      .card,
+      .header {
+        padding: 18px;
+        border-radius: 14px;
+      }
+
+      .header h1 {
+        font-size: 24px;
+      }
+
+      .question {
+        font-size: 20px;
+      }
+
+      .option {
+        font-size: 16px;
+      }
+
+      .controls {
+        flex-direction: column;
+      }
+
+      .controls button {
+        width: 100%;
+      }
+    }
+  </style>
+</head>
+
+<body>
+
+<div class="container">
+
+  <div class="header">
+    <h1>🧠 मराठी ज्ञानमंजुषा</h1>
+    <p>सामान्यज्ञान • इतिहास • चालू घडामोडी • विज्ञान • महाराष्ट्र</p>
+  </div>
+
+  <div class="card">
+
+    <!-- START SCREEN -->
+    <div id="startScreen" class="start-screen">
+      <h2>क्विझसाठी तयार आहात?</h2>
+
+      <p>
+        या क्विझमध्ये उपलब्ध प्रश्नसंचातून
+        जास्तीत जास्त 16 प्रश्न निवडले जातील.
+      </p>
+
+      <p>
+        स्तर: <strong>Intermediate → Difficult</strong>
+      </p>
+
+      <button
+        id="startButton"
+        class="main-button start-button"
+      >
+        क्विझ सुरू करा
+      </button>
+    </div>
+
+    <!-- LOADING -->
+    <div id="loading" class="loading hidden">
+      <h3>प्रश्नसंच लोड होत आहे...</h3>
+      <p>कृपया थोडा वेळ थांबा.</p>
+    </div>
+
+    <!-- ERROR -->
+    <div id="errorBox" class="error hidden"></div>
+
+    <!-- QUIZ -->
+    <div id="quizScreen" class="hidden">
+
+      <div class="topbar">
+        <span id="questionCounter" class="badge"></span>
+        <span id="categoryBadge" class="badge"></span>
+        <span id="difficultyBadge" class="badge"></span>
+      </div>
+
+      <div class="progress">
+        <div id="progressBar" class="progress-bar"></div>
+      </div>
+
+      <div id="questionNumber" class="question-number"></div>
+
+      <div id="questionText" class="question"></div>
+
+      <div id="options" class="options"></div>
+
+      <div id="explanation" class="explanation"></div>
+
+      <div class="controls">
+        <button
+          id="nextButton"
+          class="main-button next-button"
+        >
+          पुढील प्रश्न →
+        </button>
+      </div>
+
+    </div>
+
+    <!-- RESULT -->
+    <div id="resultScreen" class="result-screen hidden">
+
+      <h2>🎉 क्विझ पूर्ण!</h2>
+
+      <div id="scoreText" class="score"></div>
+
+      <p id="resultMessage"></p>
+
+      <button
+        id="restartButton"
+        class="main-button start-button"
+      >
+        पुन्हा खेळा
+      </button>
+
+    </div>
+
+  </div>
+
+</div>
+
+
+<script>
+
+  // =========================================================
+  // SUPABASE CONFIGURATION
+  // =========================================================
+
+  const SUPABASE_URL =
+    "https://hcdehhvjyccksiflncvq.supabase.co";
+
+  const SUPABASE_KEY =
+    "sb_publishable_BgsfgumJedRjYD-Htz2ikQ_5fX1Btqv";
+
+
+  // =========================================================
+  // QUIZ CONFIGURATION
+  // =========================================================
+
+  const QUESTIONS_PER_QUIZ = 16;
+
+
+  // =========================================================
+  // STATE
+  // =========================================================
+
+  let questions = [];
+  let currentQuestionIndex = 0;
+  let score = 0;
+  let answered = false;
+
+
+  // =========================================================
+  // ELEMENTS
+  // =========================================================
+
+  const startScreen =
+    document.getElementById("startScreen");
+
+  const loading =
+    document.getElementById("loading");
+
+  const errorBox =
+    document.getElementById("errorBox");
+
+  const quizScreen =
+    document.getElementById("quizScreen");
+
+  const resultScreen =
+    document.getElementById("resultScreen");
+
+  const questionCounter =
+    document.getElementById("questionCounter");
+
+  const categoryBadge =
+    document.getElementById("categoryBadge");
+
+  const difficultyBadge =
+    document.getElementById("difficultyBadge");
+
+  const progressBar =
+    document.getElementById("progressBar");
+
+  const questionNumber =
+    document.getElementById("questionNumber");
+
+  const questionText =
+    document.getElementById("questionText");
+
+  const optionsContainer =
+    document.getElementById("options");
+
+  const explanation =
+    document.getElementById("explanation");
+
+  const nextButton =
+    document.getElementById("nextButton");
+
+  const scoreText =
+    document.getElementById("scoreText");
+
+  const resultMessage =
+    document.getElementById("resultMessage");
+
+
+  // =========================================================
+  // UI HELPERS
+  // =========================================================
+
+  function hideAllScreens() {
+
+    startScreen.classList.add("hidden");
+    loading.classList.add("hidden");
+    errorBox.classList.add("hidden");
+    quizScreen.classList.add("hidden");
+    resultScreen.classList.add("hidden");
+
+  }
+
+
+  function showError(message) {
+
+    hideAllScreens();
+
+    errorBox.textContent = message;
+
+    errorBox.classList.remove("hidden");
+
+  }
+
+
+  // =========================================================
+  // FETCH QUESTIONS FROM SUPABASE
+  // =========================================================
+
+  async function fetchQuestions() {
+
+    const url =
+      SUPABASE_URL +
+      "/rest/v1/questions" +
+      "?select=id,question,option_a,option_b,option_c,option_d,correct_answer,category,difficulty,explanation,source,source_date";
+
+
+    const response = await fetch(url, {
+
+      method: "GET",
+
+      headers: {
+
+        "apikey": SUPABASE_KEY,
+
+        "Authorization":
+          "Bearer " + SUPABASE_KEY
+
+      }
+
+    });
+
+
+    if (!response.ok) {
+
+      const errorText =
+        await response.text();
+
+      throw new Error(
+        "Supabase error: " +
+        response.status +
+        " " +
+        errorText
+      );
+
+    }
+
+
+    const data =
+      await response.json();
+
+
+    return data;
+
+  }
+
+
+  // =========================================================
+  // SHUFFLE
+  // =========================================================
+
+  function shuffle(array) {
+
+    const result =
+      [...array];
+
+    for (
+      let i = result.length - 1;
+      i > 0;
+      i--
+    ) {
+
+      const j =
+        Math.floor(
+          Math.random() * (i + 1)
+        );
+
+      [
+        result[i],
+        result[j]
+      ] = [
+        result[j],
+        result[i]
+      ];
+
+    }
+
+    return result;
+
+  }
+
+
+  // =========================================================
+  // PREPARE QUESTIONS
+  // =========================================================
+
+  function prepareQuestions(data) {
+
+    // Remove obviously invalid records.
+    const valid =
+      data.filter(q => {
+
+        return (
+
+          q.question &&
+          q.option_a &&
+          q.option_b &&
+          q.option_c &&
+          q.option_d &&
+
+          [0, 1, 2, 3]
+            .includes(
+              Number(q.correct_answer)
+            )
+
+        );
+
+      });
+
+
+    // Randomize question order.
+    const randomized =
+      shuffle(valid);
+
+
+    // Take maximum 16.
+    return randomized.slice(
+      0,
+      Math.min(
+        QUESTIONS_PER_QUIZ,
+        randomized.length
+      )
+    );
+
+  }
+
+
+  // =========================================================
+  // START QUIZ
+  // =========================================================
+
+  async function startQuiz() {
+
+    hideAllScreens();
+
+    loading.classList.remove("hidden");
+
+    try {
+
+      const data =
+        await fetchQuestions();
+
+
+      questions =
+        prepareQuestions(data);
+
+
+      if (questions.length === 0) {
+
+        throw new Error(
+          "Supabase मध्ये वैध प्रश्न उपलब्ध नाहीत."
+        );
+
+      }
+
+
+      currentQuestionIndex = 0;
+      score = 0;
+
+      loading.classList.add("hidden");
+
+      quizScreen.classList.remove("hidden");
+
+      showQuestion();
+
+    }
+
+    catch (error) {
+
+      console.error(error);
+
+      showError(
+        "प्रश्न लोड करता आले नाहीत.\n\n" +
+        error.message
+      );
+
+    }
+
+  }
+
+
+  // =========================================================
+  // SHOW QUESTION
+  // =========================================================
+
+  function showQuestion() {
+
+    answered = false;
+
+    const q =
+      questions[currentQuestionIndex];
+
+
+    const total =
+      questions.length;
+
+
+    questionCounter.textContent =
+      `प्रश्न ${currentQuestionIndex + 1} / ${total}`;
+
+
+    categoryBadge.textContent =
+      q.category || "सामान्यज्ञान";
+
+
+    difficultyBadge.textContent =
+      q.difficulty || "";
+
+
+    questionNumber.textContent =
+      `प्रश्न ${currentQuestionIndex + 1}`;
+
+
+    questionText.textContent =
+      q.question;
+
+
+    progressBar.style.width =
+      (
+        ((currentQuestionIndex + 1) /
+        total) * 100
+      ) + "%";
+
+
+    // ---------------------------------------------------------
+    // OPTIONS
+    // ---------------------------------------------------------
+
+    const originalOptions = [
+
+      q.option_a,
+      q.option_b,
+      q.option_c,
+      q.option_d
+
+    ];
+
+
+    const correctOriginalIndex =
+      Number(q.correct_answer);
+
+
+    const optionObjects =
+      originalOptions.map(
+        (text, index) => ({
+
+          text: text,
+
+          originalIndex: index
+
+        })
+      );
+
+
+    const randomizedOptions =
+      shuffle(optionObjects);
+
+
+    optionsContainer.innerHTML =
+      "";
+
+
+    randomizedOptions.forEach(
+      (optionObject, displayIndex) => {
+
+        const button =
+          document.createElement("button");
+
+
+        button.className =
+          "option";
+
+
+        button.textContent =
+          `${String.fromCharCode(65 + displayIndex)}. ` +
+          optionObject.text;
+
+
+        button.addEventListener(
+          "click",
+          () => {
+
+            answerQuestion(
+              button,
+              optionObject.originalIndex,
+              correctOriginalIndex,
+              q
+            );
+
+          }
+        );
+
+
+        optionsContainer.appendChild(
+          button
+        );
+
+      }
+    );
+
+
+    explanation.style.display =
+      "none";
+
+    explanation.innerHTML =
+      "";
+
+
+    nextButton.style.display =
+      "none";
+
+  }
+
+
+  // =========================================================
+  // ANSWER
+  // =========================================================
+
+  function answerQuestion(
+    selectedButton,
+    selectedOriginalIndex,
+    correctOriginalIndex,
+    q
+  ) {
+
+    if (answered) {
+      return;
+    }
+
+    answered = true;
+
+
+    const optionButtons =
+      document.querySelectorAll(
+        ".option"
+      );
+
+
+    optionButtons.forEach(
+      button => {
+
+        button.disabled =
+          true;
+
+      }
+    );
+
+
+    if (
+      selectedOriginalIndex ===
+      correctOriginalIndex
+    ) {
+
+      selectedButton.classList.add(
+        "correct"
+      );
+
+      score++;
+
+    }
+
+    else {
+
+      selectedButton.classList.add(
+        "wrong"
+      );
+
+
+      // Find and mark correct option.
+      optionButtons.forEach(
+        button => {
+
+          const optionText =
+            button.textContent
+              .replace(
+                /^[A-D]\.\s*/,
+                ""
+              );
+
+
+          const correctText =
+            [
+              q.option_a,
+              q.option_b,
+              q.option_c,
+              q.option_d
+            ][correctOriginalIndex];
+
+
+          if (
+            optionText ===
+            correctText
+          ) {
+
+            button.classList.add(
+              "correct"
+            );
+
+          }
+
+        }
+      );
+
+    }
+
+
+    // ---------------------------------------------------------
+    // EXPLANATION
+    // ---------------------------------------------------------
+
+    explanation.innerHTML =
+
+      `<strong>स्पष्टीकरण:</strong> ` +
+
+      escapeHtml(
+        q.explanation || ""
+      ) +
+
+      `<div class="source">
+        <strong>स्रोत:</strong>
+        <a
+          href="${safeUrl(q.source)}"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          अधिकृत स्रोत पहा
+        </a>
+      </div>`;
+
+
+    explanation.style.display =
+      "block";
+
+
+    nextButton.style.display =
+      "block";
+
+
+    if (
+      currentQuestionIndex ===
+      questions.length - 1
+    ) {
+
+      nextButton.textContent =
+        "निकाल पहा →";
+
+    }
+
+    else {
+
+      nextButton.textContent =
+        "पुढील प्रश्न →";
+
+    }
+
+  }
+
+
+  // =========================================================
+  // HTML ESCAPE
+  // =========================================================
+
+  function escapeHtml(value) {
+
+    return String(value)
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#039;");
+
+  }
+
+
+  // =========================================================
+  // SAFE SOURCE URL
+  // =========================================================
+
+  function safeUrl(value) {
+
+    try {
+
+      const url =
+        new URL(value);
+
+
+      if (
+        url.protocol !== "https:"
+      ) {
+
+        return "#";
+
+      }
+
+
+      return url.href;
+
+    }
+
+    catch {
+
+      return "#";
+
+    }
+
+  }
+
+
+  // =========================================================
+  // NEXT QUESTION
+  // =========================================================
+
+  nextButton.addEventListener(
+    "click",
+    () => {
+
+      if (!answered) {
+        return;
+      }
+
+
+      currentQuestionIndex++;
+
+
+      if (
+        currentQuestionIndex >=
+        questions.length
+      ) {
+
+        showResult();
+
+        return;
+
+      }
+
+
+      showQuestion();
+
+    }
+  );
+
+
+  // =========================================================
+  // RESULT
+  // =========================================================
+
+  function showResult() {
+
+    hideAllScreens();
+
+    resultScreen.classList.remove(
+      "hidden"
+    );
+
+
+    const total =
+      questions.length;
+
+
+    scoreText.textContent =
+      `${score} / ${total}`;
+
+
+    const percentage =
+      Math.round(
+        (score / total) * 100
+      );
+
+
+    if (percentage >= 80) {
+
+      resultMessage.textContent =
+        "उत्कृष्ट! तुमचे सामान्यज्ञान खूप चांगले आहे. 🏆";
+
+    }
+
+    else if (percentage >= 60) {
+
+      resultMessage.textContent =
+        "छान! आणखी थोडा सराव केला तर तुम्ही आणखी चांगली कामगिरी करू शकता.";
+
+    }
+
+    else {
+
+      resultMessage.textContent =
+        "चांगला प्रयत्न! पुढच्या क्विझमध्ये आणखी चांगली कामगिरी करण्याचा प्रयत्न करा.";
+
+    }
+
+  }
+
+
+  // =========================================================
+  // BUTTONS
+  // =========================================================
+
+  document
+    .getElementById("startButton")
+    .addEventListener(
+      "click",
+      startQuiz
+    );
+
+
+  document
+    .getElementById("restartButton")
+    .addEventListener(
+      "click",
+      startQuiz
+    );
+
+</script>
+
+</body>
+</html>

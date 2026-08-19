@@ -20,15 +20,9 @@ SUPABASE_SECRET_KEY = os.environ["SUPABASE_SECRET_KEY"]
 MODEL = "gemini-3.5-flash-lite"
 
 QUESTIONS_PER_RUN = 16
-
-# Generate extra candidates because bad/duplicate questions
-# will be rejected.
 CANDIDATES_PER_RUN = 22
 
-USER_AGENT = (
-    "Mozilla/5.0 "
-    "MarathiQuizUpdater/1.0"
-)
+USER_AGENT = "MarathiQuizUpdater/1.0"
 
 
 # ============================================================
@@ -51,9 +45,7 @@ REST_URL = (
 
 SUPABASE_HEADERS = {
     "apikey": SUPABASE_SECRET_KEY,
-    "Authorization": (
-        f"Bearer {SUPABASE_SECRET_KEY}"
-    ),
+    "Authorization": f"Bearer {SUPABASE_SECRET_KEY}",
     "Content-Type": "application/json",
     "Prefer": "return=minimal"
 }
@@ -64,7 +56,6 @@ SUPABASE_HEADERS = {
 # ============================================================
 
 RSS_SOURCES = [
-
     {
         "name": "Press Information Bureau",
         "url": (
@@ -80,16 +71,12 @@ RSS_SOURCES = [
             "Environment",
             "Awards"
         ]
-    },
-
+    }
 ]
 
 
 # ============================================================
 # TRUSTED DIRECT SOURCES
-#
-# These are used as source pages for non-current categories.
-# We fetch the actual page and give its content to Gemini.
 # ============================================================
 
 DIRECT_SOURCES = [
@@ -210,8 +197,7 @@ DIRECT_SOURCES = [
             "Sports",
             "Current Affairs"
         ]
-    },
-
+    }
 ]
 
 
@@ -220,7 +206,6 @@ DIRECT_SOURCES = [
 # ============================================================
 
 APPROVED_DOMAINS = {
-
     "pib.gov.in",
     "gov.in",
     "nic.in",
@@ -242,7 +227,6 @@ APPROVED_DOMAINS = {
 # ============================================================
 
 CATEGORIES = [
-
     "Current Affairs",
     "Maratha History",
     "Maharashtra History",
@@ -261,7 +245,6 @@ CATEGORIES = [
     "Awards",
     "International Affairs",
     "General Knowledge"
-
 ]
 
 
@@ -293,13 +276,9 @@ def is_wikipedia(url):
 
         return (
             hostname == "wikipedia.org"
-            or hostname.endswith(
-                ".wikipedia.org"
-            )
+            or hostname.endswith(".wikipedia.org")
             or hostname == "wikimedia.org"
-            or hostname.endswith(
-                ".wikimedia.org"
-            )
+            or hostname.endswith(".wikimedia.org")
         )
 
     except Exception:
@@ -326,9 +305,7 @@ def approved_domain(url):
 
             if (
                 hostname == domain
-                or hostname.endswith(
-                    "." + domain
-                )
+                or hostname.endswith("." + domain)
             ):
                 return True
 
@@ -438,8 +415,7 @@ def fetch_direct_sources():
             response = requests.get(
                 source["url"],
                 headers={
-                    "User-Agent":
-                        USER_AGENT
+                    "User-Agent": USER_AGENT
                 },
                 timeout=20
             )
@@ -455,7 +431,6 @@ def fetch_direct_sources():
 
             text = response.text
 
-            # Remove scripts/styles to reduce noise.
             text = re.sub(
                 r"<script.*?</script>",
                 " ",
@@ -482,7 +457,6 @@ def fetch_direct_sources():
                 text
             ).strip()
 
-            # Don't send enormous webpages to Gemini.
             text = text[:30000]
 
             if len(text) < 500:
@@ -551,15 +525,11 @@ def get_existing_questions():
 
 def build_research_packet():
 
-    rss_articles = (
-        fetch_rss_sources()
-    )
+    rss_articles = fetch_rss_sources()
 
-    direct_documents = (
-        fetch_direct_sources()
-    )
+    direct_documents = fetch_direct_sources()
 
-    packet = {
+    return {
 
         "rss_articles":
             rss_articles,
@@ -568,8 +538,6 @@ def build_research_packet():
             direct_documents
 
     }
-
-    return packet
 
 
 # ============================================================
@@ -588,40 +556,32 @@ def generate_questions(packet):
         indent=2
     )
 
-    # Keep request reasonably small.
     packet_text = packet_text[:120000]
 
     prompt = f"""
-तुम्ही अत्यंत काटेकोर fact-checking
-quiz editor आहात.
+तुम्ही अत्यंत काटेकोर fact-checking quiz editor आहात.
 
 तारीख:
 {today}
 
-तुमचे काम:
 खाली दिलेल्या TRUSTED SOURCE MATERIAL मधून
-मराठीमध्ये बहुपर्यायी प्रश्न तयार करणे.
+मराठीमध्ये बहुपर्यायी प्रश्न तयार करा.
 
-एकूण candidate questions:
+Candidate questions:
 {CANDIDATES_PER_RUN}
 
 अंतिम उद्दिष्ट:
-जास्तीत जास्त {QUESTIONS_PER_RUN}
-विश्वसनीय प्रश्न.
+जास्तीत जास्त {QUESTIONS_PER_RUN} विश्वसनीय प्रश्न.
 
-====================================================
-अत्यंत महत्त्वाचे SOURCE RULES
-====================================================
+SOURCE RULES:
 
-तुम्ही स्वतः इंटरनेटवर शोध घेऊ नका.
+फक्त दिलेल्या source material वर आधारित प्रश्न तयार करा.
 
-फक्त खाली दिलेल्या source material वर आधारित
-प्रश्न तयार करा.
+स्वतः इंटरनेटवर शोध घेऊ नका.
 
 Wikipedia STRICTLY FORBIDDEN आहे.
 
-Wikipedia, Wikidata किंवा Wikimedia आढळल्यास
-तो source वापरू नका.
+Wikipedia, Wikidata किंवा Wikimedia वापरू नका.
 
 दिलेल्या source material मध्ये माहिती नसल्यास
 प्रश्न तयार करू नका.
@@ -629,49 +589,35 @@ Wikipedia, Wikidata किंवा Wikimedia आढळल्यास
 स्वतःचे तथ्य, तारीख, व्यक्ती, संख्या,
 पुरस्कार, पद किंवा घटना बनवू नका.
 
-====================================================
-ACCURACY
-====================================================
+ACCURACY:
 
 प्रत्येक प्रश्नासाठी source material मध्ये
 उत्तराचा स्पष्ट आधार असणे आवश्यक आहे.
 
-जर तथ्य ambiguous असेल:
+तथ्य ambiguous असल्यास प्रश्न वगळा.
+
+दोन पर्याय बरोबर असण्याची शक्यता असल्यास
 प्रश्न वगळा.
 
-जर दोन पर्याय बरोबर होऊ शकत असतील:
-प्रश्न वगळा.
-
-जर source पुरेसा स्पष्ट नसेल:
-प्रश्न वगळा.
+Source पुरेसा स्पष्ट नसेल तर प्रश्न वगळा.
 
 16 प्रश्न पूर्ण करण्यासाठी accuracy चा
 कधीही compromise करू नका.
 
-====================================================
-भाषा
-====================================================
+भाषा:
 
-सर्व प्रश्न, पर्याय आणि explanation
-मराठीत असावेत.
+सर्व प्रश्न, पर्याय आणि explanation मराठीत असावेत.
 
-व्यक्तींची नावे, संस्थांची नावे आणि
-अधिकृत संज्ञा आवश्यकतेनुसार मूळ स्वरूपात
-ठेवू शकता.
+व्यक्तींची नावे, संस्थांची नावे आणि अधिकृत
+संज्ञा आवश्यकतेनुसार मूळ स्वरूपात ठेवू शकता.
 
-====================================================
-DIFFICULTY
-====================================================
+DIFFICULTY:
 
 Intermediate ते Difficult.
 
 अतिशय सोपे प्रश्न टाळा.
 
-====================================================
-CATEGORIES
-====================================================
-
-खालील categories वापरा:
+CATEGORIES:
 
 {json.dumps(CATEGORIES, ensure_ascii=False)}
 
@@ -680,16 +626,13 @@ Current Affairs ला प्राधान्य द्या.
 Maratha History आणि Maharashtra History
 नियमितपणे समाविष्ट करा.
 
-इतर categories उपलब्ध source material नुसार
-वापरा.
+उपलब्ध source material नुसार इतर categories वापरा.
 
-====================================================
-4 OPTIONS
-====================================================
+OPTIONS:
 
-प्रत्येक प्रश्नाला exactly 4 options.
+प्रत्येक प्रश्नाला exactly 4 options असावेत.
 
-फक्त एक correct answer.
+फक्त एक correct answer असावा.
 
 correct_answer:
 
@@ -698,9 +641,7 @@ correct_answer:
 2 = तिसरा पर्याय
 3 = चौथा पर्याय
 
-====================================================
-SOURCE
-====================================================
+SOURCE:
 
 source field मध्ये source material मधील
 अचूक URL द्या.
@@ -709,9 +650,7 @@ URL बनवू नका.
 
 Wikipedia URL देऊ नका.
 
-====================================================
-OUTPUT
-====================================================
+OUTPUT:
 
 फक्त JSON द्या.
 
@@ -737,9 +676,7 @@ Format:
   ]
 }}
 
-====================================================
-TRUSTED SOURCE MATERIAL
-====================================================
+TRUSTED SOURCE MATERIAL:
 
 {packet_text}
 """
@@ -773,62 +710,52 @@ TRUSTED SOURCE MATERIAL
 
                                 "question":
                                     {
-                                        "type":
-                                            "STRING"
+                                        "type": "STRING"
                                     },
 
                                 "options": {
 
-                                    "type":
-                                        "ARRAY",
+                                    "type": "ARRAY",
 
                                     "items": {
-                                        "type":
-                                            "STRING"
+                                        "type": "STRING"
                                     }
 
                                 },
 
                                 "correct_answer":
                                     {
-                                        "type":
-                                            "INTEGER"
+                                        "type": "INTEGER"
                                     },
 
                                 "category":
                                     {
-                                        "type":
-                                            "STRING"
+                                        "type": "STRING"
                                     },
 
                                 "difficulty":
                                     {
-                                        "type":
-                                            "STRING"
+                                        "type": "STRING"
                                     },
 
                                 "explanation":
                                     {
-                                        "type":
-                                            "STRING"
+                                        "type": "STRING"
                                     },
 
                                 "source":
                                     {
-                                        "type":
-                                            "STRING"
+                                        "type": "STRING"
                                     },
 
                                 "source_date":
                                     {
-                                        "type":
-                                            "STRING"
+                                        "type": "STRING"
                                     }
 
                             },
 
                             "required": [
-
                                 "question",
                                 "options",
                                 "correct_answer",
@@ -837,7 +764,6 @@ TRUSTED SOURCE MATERIAL
                                 "explanation",
                                 "source",
                                 "source_date"
-
                             ]
 
                         }
@@ -873,7 +799,6 @@ TRUSTED SOURCE MATERIAL
 def validate_question(q):
 
     required = [
-
         "question",
         "options",
         "correct_answer",
@@ -882,7 +807,6 @@ def validate_question(q):
         "explanation",
         "source",
         "source_date"
-
     ]
 
     if not isinstance(q, dict):
@@ -909,16 +833,11 @@ def validate_question(q):
         return False
 
     normalized_options = [
-
         normalize_text(x)
-
         for x in q["options"]
-
     ]
 
-    if len(
-        set(normalized_options)
-    ) != 4:
+    if len(set(normalized_options)) != 4:
 
         print(
             "Rejected: duplicate options"
@@ -936,7 +855,6 @@ def validate_question(q):
         return False
 
     if q["category"] not in CATEGORIES:
-
         return False
 
     if q["difficulty"] not in [
@@ -1033,17 +951,27 @@ def save_questions(
 
             continue
 
+        # IMPORTANT:
+        # Gemini returns one "options" array.
+        # Supabase has four separate columns:
+        # option_a, option_b, option_c, option_d.
+
         payload = {
 
             "question":
                 q["question"].strip(),
 
-            "options":
-                [
-                    str(option).strip()
-                    for option
-                    in q["options"]
-                ],
+            "option_a":
+                str(q["options"][0]).strip(),
+
+            "option_b":
+                str(q["options"][1]).strip(),
+
+            "option_c":
+                str(q["options"][2]).strip(),
+
+            "option_d":
+                str(q["options"][3]).strip(),
 
             "correct_answer":
                 int(q["correct_answer"]),
@@ -1123,8 +1051,7 @@ def main():
     print("=" * 60)
 
     print(
-        f"Target: "
-        f"{QUESTIONS_PER_RUN}"
+        f"Target: {QUESTIONS_PER_RUN}"
     )
 
     print(
@@ -1149,13 +1076,10 @@ def main():
 
     print()
 
-    existing = (
-        get_existing_questions()
-    )
+    existing = get_existing_questions()
 
     print(
-        f"Existing questions: "
-        f"{len(existing)}"
+        f"Existing questions: {len(existing)}"
     )
 
     print()
@@ -1164,9 +1088,7 @@ def main():
         "Fetching trusted source material..."
     )
 
-    packet = (
-        build_research_packet()
-    )
+    packet = build_research_packet()
 
     rss_count = len(
         packet["rss_articles"]
@@ -1177,13 +1099,11 @@ def main():
     )
 
     print(
-        f"RSS articles: "
-        f"{rss_count}"
+        f"RSS articles: {rss_count}"
     )
 
     print(
-        f"Reference documents: "
-        f"{document_count}"
+        f"Reference documents: {document_count}"
     )
 
     if (
@@ -1203,13 +1123,10 @@ def main():
         "Generating Marathi questions..."
     )
 
-    questions = (
-        generate_questions(packet)
-    )
+    questions = generate_questions(packet)
 
     print(
-        f"Candidates generated: "
-        f"{len(questions)}"
+        f"Candidates generated: {len(questions)}"
     )
 
     print()
@@ -1239,14 +1156,12 @@ def main():
     if inserted < QUESTIONS_PER_RUN:
 
         print(
-            "WARNING: Daily target was "
-            "not reached."
+            "WARNING: Daily target was not reached."
         )
 
         print(
             "This is intentional: "
-            "unverified questions are "
-            "never inserted."
+            "unverified questions are never inserted."
         )
 
     else:
